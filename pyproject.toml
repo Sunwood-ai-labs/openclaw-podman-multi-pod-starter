@@ -1,5 +1,5 @@
 [project]
-name = "openclaw-podman-starter"
+name = "openclaw-podman-multi-pod-starter"
 version = "0.1.0"
 description = "Concept starter for running OpenClaw with Podman"
 readme = "README.md"
@@ -15,3 +15,6 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openclaw_podman_starter"]

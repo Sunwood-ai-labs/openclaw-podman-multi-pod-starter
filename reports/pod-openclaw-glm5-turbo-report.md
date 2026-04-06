@@ -35,7 +35,7 @@ The transcript also includes the generated file contents from the `read` tool ca
 
 Host-visible file:
 
-- `D:\Prj\openclaw-podman-starter\.openclaw\instances\1\workspace\agent_glm5turbo_created.py`
+- `D:\Prj\openclaw-podman-multi-pod-starter\.openclaw\instances\1\workspace\agent_glm5turbo_created.py`
 
 ## Re-executed Output
 

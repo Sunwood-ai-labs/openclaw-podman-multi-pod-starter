@@ -1,6 +1,6 @@
 <div align="center">
 
-# openclaw-podman-starter
+# openclaw-podman-multi-pod-starter
 
 ![Project header](./assets/header.svg)
 
@@ -8,8 +8,8 @@
 
 [English README](./README.md)
 
-![CI](https://github.com/Sunwood-ai-labs/openclaw-podman-starter/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-podman-starter)
+![CI](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-podman-multi-pod-starter)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Podman](https://img.shields.io/badge/podman-kube%20play-892CA0)
 
@@ -41,7 +41,7 @@
 ## 🚀 クイックスタート
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-podman-multi-pod-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
