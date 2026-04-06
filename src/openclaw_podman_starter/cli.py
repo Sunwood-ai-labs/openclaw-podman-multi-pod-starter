@@ -288,6 +288,7 @@ def ensure_state(cfg: Config) -> Config:
     remove_env_value(cfg.env_file, "OPENCLAW_GATEWAY_TOKEN")
 
     ensure_openclaw_config(cfg)
+    ensure_kube_manifest(cfg, instance_label="single")
 
     return load_config(cfg.env_file)
 
@@ -410,65 +411,13 @@ def ensure_scaled_instance_state(instance: ScaledInstance) -> ScaledInstance:
         f"# Generated for scaled instance {instance.instance_id}.",
     )
     cfg = ensure_state(load_config(instance.config.env_file))
+    ensure_kube_manifest(cfg, pod_name=instance.pod_name, instance_label=str(instance.instance_id))
     return ScaledInstance(
         instance_id=instance.instance_id,
         pod_name=instance.pod_name,
         container_name=instance.container_name,
         config=cfg,
     )
-
-
-def build_pod_create_command(instance: ScaledInstance) -> list[str]:
-    cfg = instance.config
-    return [
-        "podman",
-        "pod",
-        "create",
-        "--replace",
-        "--name",
-        instance.pod_name,
-        "--label",
-        f"{MANAGED_LABEL_KEY}=true",
-        "--label",
-        f"{INSTANCE_LABEL_KEY}={instance.instance_id}",
-        "-p",
-        f"{cfg.publish_host}:{cfg.gateway_port}:18789",
-        "-p",
-        f"{cfg.publish_host}:{cfg.bridge_port}:18790",
-    ]
-
-
-def build_pod_run_command(instance: ScaledInstance) -> list[str]:
-    cfg = instance.config
-    command = [
-        "podman",
-        "run",
-        "--detach",
-        "--replace",
-        "--name",
-        instance.container_name,
-        "--pod",
-        instance.pod_name,
-        "--label",
-        f"{MANAGED_LABEL_KEY}=true",
-        "--label",
-        f"{INSTANCE_LABEL_KEY}={instance.instance_id}",
-    ]
-
-    if cfg.userns:
-        command.append(f"--userns={cfg.userns}")
-
-    command.extend(["-v", f"{podman_host_path(cfg.config_dir)}:{CONTAINER_CONFIG_DIR}"])
-
-    default_workspace = cfg.config_dir / "workspace"
-    if cfg.workspace_dir != default_workspace:
-        command.extend(["-v", f"{podman_host_path(cfg.workspace_dir)}:{CONTAINER_WORKSPACE_DIR}"])
-
-    for key, value in runtime_env_pairs(cfg):
-        command.extend(["-e", f"{key}={value}"])
-
-    command.append(cfg.image)
-    return command
 
 
 def print_scaled_instance_summary(instance: ScaledInstance) -> None:
@@ -482,44 +431,93 @@ def has_scaled_selection(args: argparse.Namespace) -> bool:
     return getattr(args, "instance", None) is not None or getattr(args, "count", None) is not None
 
 
-def build_launch_command(cfg: Config) -> list[str]:
-    command = [
-        "podman",
-        "run",
-        "--detach",
-        "--replace",
-        "--name",
-        cfg.container_name,
-    ]
+def pod_name_for_config(cfg: Config) -> str:
+    return f"{cfg.container_name}-pod"
 
-    if cfg.userns:
-        command.append(f"--userns={cfg.userns}")
 
-    command.extend(
-        [
-            "-p",
-            f"{cfg.publish_host}:{cfg.gateway_port}:18789",
-            "-p",
-            f"{cfg.publish_host}:{cfg.bridge_port}:18790",
-            "-v",
-            f"{podman_host_path(cfg.config_dir)}:{CONTAINER_CONFIG_DIR}",
-        ]
+def manifest_path_for_config(cfg: Config) -> Path:
+    return cfg.config_dir / "pod.yaml"
+
+
+def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[str, object]:
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": pod_name,
+            "labels": {
+                MANAGED_LABEL_KEY: "true",
+                INSTANCE_LABEL_KEY: instance_label,
+            },
+            "annotations": {
+                "io.podman.annotations.userns": cfg.userns,
+            },
+        },
+        "spec": {
+            "restartPolicy": "Always",
+            "containers": [
+                {
+                    "name": cfg.container_name,
+                    "image": cfg.image,
+                    "ports": [
+                        {
+                            "name": "gateway",
+                            "containerPort": 18789,
+                            "hostPort": cfg.gateway_port,
+                            "hostIP": cfg.publish_host,
+                            "protocol": "TCP",
+                        },
+                        {
+                            "name": "bridge",
+                            "containerPort": 18790,
+                            "hostPort": cfg.bridge_port,
+                            "hostIP": cfg.publish_host,
+                            "protocol": "TCP",
+                        },
+                    ],
+                    "env": [{"name": key, "value": value} for key, value in runtime_env_pairs(cfg)],
+                    "volumeMounts": [
+                        {
+                            "name": "openclaw-state",
+                            "mountPath": CONTAINER_CONFIG_DIR,
+                        }
+                    ],
+                }
+            ],
+            "volumes": [
+                {
+                    "name": "openclaw-state",
+                    "hostPath": {
+                        "path": podman_host_path(cfg.config_dir),
+                        "type": "DirectoryOrCreate",
+                    },
+                }
+            ],
+        },
+    }
+
+
+def ensure_kube_manifest(cfg: Config, pod_name: str | None = None, instance_label: str = "single") -> Path:
+    resolved_pod_name = pod_name or pod_name_for_config(cfg)
+    manifest_path = manifest_path_for_config(cfg)
+    manifest_path.write_text(
+        json.dumps(kube_manifest_for(cfg, resolved_pod_name, instance_label), indent=2) + "\n",
+        encoding="utf-8",
     )
+    return manifest_path
 
-    default_workspace = cfg.config_dir / "workspace"
-    if cfg.workspace_dir != default_workspace:
-        command.extend(
-            [
-                "-v",
-                f"{podman_host_path(cfg.workspace_dir)}:{CONTAINER_WORKSPACE_DIR}",
-            ]
-        )
 
-    for key, value in runtime_env_pairs(cfg):
-        command.extend(["-e", f"{key}={value}"])
-
-    command.append(cfg.image)
+def build_kube_play_command(cfg: Config, pod_name: str | None = None, instance_label: str = "single") -> list[str]:
+    manifest_path = ensure_kube_manifest(cfg, pod_name=pod_name, instance_label=instance_label)
+    command = ["podman", "kube", "play", "--replace", "--no-pod-prefix"]
+    if cfg.userns:
+        command.extend(["--userns", cfg.userns])
+    command.append(str(manifest_path))
     return command
+
+
+def build_kube_down_command(cfg: Config) -> list[str]:
+    return ["podman", "kube", "down", str(manifest_path_for_config(cfg))]
 
 
 def run_process(command: list[str], check: bool = True) -> int:
@@ -616,19 +614,20 @@ def cmd_launch(args: argparse.Namespace) -> int:
 
         overall = 0
         for instance in instances:
-            pod_command = build_pod_create_command(instance)
-            run_command = build_pod_run_command(instance)
+            play_command = build_kube_play_command(
+                instance.config,
+                pod_name=instance.pod_name,
+                instance_label=str(instance.instance_id),
+            )
             print_scaled_instance_summary(instance)
-            print(command_for_display(pod_command))
-            print(command_for_display(run_command))
+            print(command_for_display(play_command))
 
             if args.dry_run:
                 continue
 
-            pod_exit = run_process(pod_command, check=False)
-            run_exit = run_process(run_command, check=False) if pod_exit == 0 else pod_exit
-            if run_exit != 0:
-                overall = run_exit
+            play_exit = run_process(play_command, check=False)
+            if play_exit != 0:
+                overall = play_exit
             else:
                 print(f"[ok] instance {instance.instance_id} reachable at http://{instance.config.publish_host}:{instance.config.gateway_port}/")
         return overall
@@ -638,7 +637,7 @@ def cmd_launch(args: argparse.Namespace) -> int:
     if not args.no_init:
         cfg = ensure_state(cfg)
 
-    command = build_launch_command(cfg)
+    command = build_kube_play_command(cfg)
     print(command_for_display(command))
     if args.dry_run:
         return 0
@@ -689,7 +688,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("[fail] podman is not installed or not on PATH", file=sys.stderr)
         return 1
     return run_process(
-        ["podman", "ps", "-a", "--filter", f"name={cfg.container_name}"],
+        ["podman", "pod", "ps", "--filter", f"name={pod_name_for_config(cfg)}"],
         check=False,
     )
 
@@ -702,10 +701,10 @@ def cmd_logs(args: argparse.Namespace) -> int:
             print("[fail] podman is not installed or not on PATH", file=sys.stderr)
             return 1
         instance = scaled_instance(args.env_file, args.instance)
-        command = ["podman", "logs"]
+        command = ["podman", "pod", "logs", "--names"]
         if args.follow:
             command.append("-f")
-        command.append(instance.container_name)
+        command.append(instance.pod_name)
         return run_process(command, check=False)
 
     cfg = load_config(args.env_file)
@@ -713,10 +712,10 @@ def cmd_logs(args: argparse.Namespace) -> int:
         print("[fail] podman is not installed or not on PATH", file=sys.stderr)
         return 1
 
-    command = ["podman", "logs"]
+    command = ["podman", "pod", "logs", "--names"]
     if args.follow:
         command.append("-f")
-    command.append(cfg.container_name)
+    command.append(pod_name_for_config(cfg))
     return run_process(command, check=False)
 
 
@@ -729,21 +728,13 @@ def cmd_stop(args: argparse.Namespace) -> int:
         overall = 0
         for instance_id in selected_instance_ids(args.instance, args.count):
             instance = scaled_instance(args.env_file, instance_id)
-            stop_command = ["podman", "pod", "stop", instance.pod_name]
-            remove_command = ["podman", "pod", "rm", "-f", instance.pod_name]
-            print(f"[instance {instance_id}] {command_for_display(stop_command)}")
-            if args.remove:
-                print(f"[instance {instance_id}] {command_for_display(remove_command)}")
+            down_command = build_kube_down_command(instance.config)
+            print(f"[instance {instance_id}] {command_for_display(down_command)}")
             if args.dry_run:
                 continue
-            stop_exit = run_process(stop_command, check=False)
-            if stop_exit != 0:
-                overall = stop_exit
-                continue
-            if args.remove:
-                remove_exit = run_process(remove_command, check=False)
-                if remove_exit != 0:
-                    overall = remove_exit
+            down_exit = run_process(down_command, check=False)
+            if down_exit != 0:
+                overall = down_exit
         return overall
 
     cfg = load_config(args.env_file)
@@ -751,18 +742,12 @@ def cmd_stop(args: argparse.Namespace) -> int:
         print("[fail] podman is not installed or not on PATH", file=sys.stderr)
         return 1
 
-    stop_command = ["podman", "stop", cfg.container_name]
-    remove_command = ["podman", "rm", "-f", cfg.container_name]
+    stop_command = build_kube_down_command(cfg)
     if args.dry_run:
         print(command_for_display(stop_command))
-        if args.remove:
-            print(command_for_display(remove_command))
         return 0
 
     stop_code = run_process(stop_command, check=False)
-    if args.remove:
-        remove_code = run_process(remove_command, check=False)
-        return remove_code if remove_code != 0 else stop_code
     return stop_code
 
 
@@ -776,6 +761,7 @@ def cmd_print_env(args: argparse.Namespace) -> int:
         print_kv("pod", instance.pod_name)
         print_kv("container", instance.container_name)
         print_kv("env file", str(cfg.env_file))
+        print_kv("manifest", str(manifest_path_for_config(cfg)))
         print_kv("image", cfg.image)
         print_kv("publish host", cfg.publish_host)
         print_kv("gateway port", str(cfg.gateway_port))
@@ -799,6 +785,7 @@ def cmd_print_env(args: argparse.Namespace) -> int:
     print_kv("userns", cfg.userns)
     print_kv("config dir", str(cfg.config_dir))
     print_kv("state env", str(config_env_file(cfg.config_dir)))
+    print_kv("manifest", str(manifest_path_for_config(cfg)))
     print_kv("workspace dir", str(cfg.workspace_dir))
     print_kv("ollama base url", cfg.ollama_base_url)
     print_kv("default model", model_ref_for(cfg))
