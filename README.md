@@ -1,32 +1,42 @@
+<div align="center">
+
 # openclaw-podman-starter
 
-Windows ホストから `Podman` で current `OpenClaw` Gateway を動かし、ホスト側 `Ollama` の `gemma4:e2b` を既定モデルとして使うためのスターターです。
+Run OpenClaw inside Podman with file-based `podman kube play` manifests, isolated multi-instance state, and validated local-model setups for Ollama Gemma and Z.AI GLM.
 
-今の構成は `podman run` 直打ちではなく、instance ごとの manifest ファイルを生成して `podman kube play` / `podman kube down` で扱う前提です。運用の source of truth はファイルです。
+[日本語 README](./README.ja.md)
 
-## コンセプト
+![CI](https://github.com/Sunwood-ai-labs/openclaw-podman-starter/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-podman-starter)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Podman](https://img.shields.io/badge/podman-kube%20play-892CA0)
 
-- 1 instance = 1 Podman pod = 1 OpenClaw gateway container
-- 既定モデルは `ollama/gemma4:e2b`
-- コンテナ内 OpenClaw からホスト Ollama へ `http://host.containers.internal:11434` で接続
-- OpenClaw の内部 sandbox は切り、`tools.profile: "full"` / `sandbox.mode: "off"` を seed
-- state, workspace, token, port は instance ごとに完全分離
+</div>
 
-## 前提
+## ✨ Overview
 
-- `uv`
-- `Podman`
-- `openclaw` CLI
-- `ollama` CLI
-- `ollama list` に `gemma4:e2b` が出ること
+This repository packages a practical Windows-first starter for running OpenClaw in Podman.
 
-補足:
+Key ideas:
 
-- OpenClaw 公式では Windows は WSL2 運用が推奨です。
-- Ollama 連携は native API 前提です。`OPENCLAW_OLLAMA_BASE_URL` に `/v1` は付けません。
-- この repo の multi-instance 分離は same-trust operator 向けの運用分離であり、強い multi-tenant security boundary ではありません。
+- One instance = one Podman pod = one OpenClaw gateway container
+- Instance state, workspace, token, and ports are isolated
+- Runtime manifests are generated as `pod.yaml` files and executed with `podman kube play`
+- The repo can scale to multiple independent local instances such as 3 side-by-side pods
+- Validation reports for `zai/glm-5-turbo`, `ollama/gemma4:e4b`, and `ollama/gemma4:e2b` are included
 
-## 単一 instance
+## 🧭 Why This Repo Exists
+
+OpenClaw's official docs explain Podman and multi-gateway concepts, but operating several local instances with repeatable manifests, Windows path handling, and local-model verification still takes glue work.
+
+This repo provides that glue:
+
+- a small Python CLI managed by `uv`
+- PowerShell wrappers for common operations
+- generated per-instance state and manifests
+- known-good verification notes for pod-local agent execution
+
+## 🚀 Quick Start
 
 ```powershell
 cd D:\Prj\openclaw-podman-starter
@@ -38,15 +48,21 @@ notepad .env
 .\scripts\launch.ps1 --dry-run
 ```
 
-`init` 後には次が生成されます。
+Generated files for the single-instance path:
 
-- `D:\Prj\openclaw-podman-starter\.openclaw\openclaw.json`
-- `D:\Prj\openclaw-podman-starter\.openclaw\.env`
-- `D:\Prj\openclaw-podman-starter\.openclaw\pod.yaml`
+- `.openclaw/openclaw.json`
+- `.openclaw/.env`
+- `.openclaw/pod.yaml`
 
-実起動は `podman kube play --replace --no-pod-prefix <pod.yaml>` 相当です。
+Actual runtime command:
 
-## 3 instance 起動
+```powershell
+podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
+```
+
+## 🧱 Scale Out
+
+Launch 3 isolated local instances:
 
 ```powershell
 .\scripts\init.ps1 --count 3
@@ -56,98 +72,105 @@ notepad .env
 .\scripts\stop.ps1 --count 3 --remove
 ```
 
-既定ではこう分かれます。
+Default topology:
 
-- `instance 1`: pod `openclaw-1-pod`, container `openclaw-1`, gateway `127.0.0.1:18789`, state `./.openclaw/instances/1`
-- `instance 2`: pod `openclaw-2-pod`, container `openclaw-2`, gateway `127.0.0.1:18791`, state `./.openclaw/instances/2`
-- `instance 3`: pod `openclaw-3-pod`, container `openclaw-3`, gateway `127.0.0.1:18793`, state `./.openclaw/instances/3`
+- Instance 1: `openclaw-1-pod` on `127.0.0.1:18789`
+- Instance 2: `openclaw-2-pod` on `127.0.0.1:18791`
+- Instance 3: `openclaw-3-pod` on `127.0.0.1:18793`
 
-各 instance には次が生成されます。
+Each instance gets its own:
 
-- `./.openclaw/instances/N/control.env`
-- `./.openclaw/instances/N/.env`
-- `./.openclaw/instances/N/openclaw.json`
-- `./.openclaw/instances/N/pod.yaml`
-- `./.openclaw/instances/N/workspace/`
+- `control.env`
+- `.env`
+- `openclaw.json`
+- `pod.yaml`
+- `workspace/`
 
-## host-only smoke
+under `.openclaw/instances/<N>/`.
 
-`Podman` が無い環境でも、host 側 OpenClaw と Ollama だけで `gemma4:e2b` の限定スモークはできます。
+## ⚙️ Model Setups
 
-```powershell
-$env:OLLAMA_API_KEY = "ollama-local"
-openclaw --profile gemma4-e2b-lab config set agents.defaults.model.primary '"ollama/gemma4:e2b"'
-openclaw --profile gemma4-e2b-lab config set tools.profile '"full"'
-openclaw --profile gemma4-e2b-lab config set agents.defaults.sandbox.mode '"off"'
-openclaw --profile gemma4-e2b-lab agent --local --agent main --message "こんにちはを一語だけ返して。" --json
+### Ollama
+
+Default starter values:
+
+- model: `ollama/gemma4:e2b`
+- base URL: `http://host.containers.internal:11434`
+
+On the actual Windows + WSL Podman machine used for validation, the working host-side Ollama endpoint was:
+
+```text
+http://172.27.208.1:11434
 ```
 
-このワークスペースでは実際に `provider=ollama`, `model=gemma4:e2b`, `sandbox.mode=off` で 1 ターン応答することまで確認済みです。
+If `host.containers.internal` does not reach your Windows-hosted Ollama instance, replace `OPENCLAW_OLLAMA_BASE_URL` in `.env`.
 
-## よく使うコマンド
+### Z.AI
+
+Verified Z.AI path:
+
+- model: `zai/glm-5-turbo`
+
+The repo can pass `ZAI_API_KEY` through to the pod when present in `.env`.
+
+## ✅ Verification Reports
+
+Validation notes are kept in:
+
+- [GLM-5-Turbo pod report](./reports/pod-openclaw-glm5-turbo-report.md)
+- [Gemma pod report](./reports/pod-openclaw-gemma-report.md)
+
+Those reports document:
+
+- pod-local health checks
+- agent-side file generation and execution
+- transcript-backed `write` / `read` / `exec` evidence
+
+## 🛠️ Main Commands
 
 ```powershell
+.\scripts\init.ps1
+.\scripts\launch.ps1
+.\scripts\status.ps1
+.\scripts\logs.ps1 -Follow
+.\scripts\stop.ps1 --remove
 .\scripts\print-env.ps1
-uv run openclaw-podman print-env --instance 2
+```
+
+Scaled usage:
+
+```powershell
+uv run openclaw-podman init --count 3
 uv run openclaw-podman launch --count 3 --dry-run
+uv run openclaw-podman print-env --instance 2
 uv run openclaw-podman status --count 3
 uv run openclaw-podman stop --count 3 --remove --dry-run
 ```
 
-PowerShell ラッパーは `init.ps1`, `doctor.ps1`, `launch.ps1`, `status.ps1`, `logs.ps1`, `stop.ps1` だけです。追加引数はそのまま透過されます。
+## 📁 Repository Layout
 
-## 設定
+- `src/openclaw_podman_starter/` - helper CLI
+- `scripts/` - PowerShell wrappers
+- `reports/` - validation reports
+- `.env.example` - starter environment template
 
-主に使う env は次です。
+## 🔐 Trust Model
 
-- `OPENCLAW_CONTAINER`: host CLI から見た単一 instance の container 名
-- `OPENCLAW_PODMAN_CONTAINER`: Podman 側の base container 名
-- `OPENCLAW_IMAGE`: OpenClaw image
-- `OPENCLAW_PODMAN_PUBLISH_HOST`: host publish IP
-- `OPENCLAW_PODMAN_GATEWAY_HOST_PORT`: 単一 instance の gateway port
-- `OPENCLAW_PODMAN_BRIDGE_HOST_PORT`: 単一 instance の bridge port
-- `OPENCLAW_CONFIG_DIR`: 単一 instance の config dir
-- `OPENCLAW_WORKSPACE_DIR`: 単一 instance の workspace dir
-- `OPENCLAW_SCALE_INSTANCE_ROOT`: scaled instances の root dir
-- `OPENCLAW_SCALE_GATEWAY_PORT_START`: instance 1 の gateway port
-- `OPENCLAW_SCALE_BRIDGE_PORT_START`: instance 1 の bridge port
-- `OPENCLAW_SCALE_PORT_STEP`: instance ごとの port 増分
-- `OLLAMA_API_KEY`: OpenClaw が Ollama provider を有効化するための marker
-- `OPENCLAW_OLLAMA_BASE_URL`: Ollama native API URL
-- `OPENCLAW_OLLAMA_MODEL`: 既定 model ID
+This repo is designed for same-trust operator workflows.
 
-helper は state 側 `.env` に `OPENCLAW_GATEWAY_TOKEN` を書き、repo 側 `.env` から `*_API_KEY` をコンテナへ渡します。
+It isolates instances operationally, but it is not intended to claim hard multi-tenant security separation. OpenClaw is configured in a full-access-in-container mode and relies on the outer Podman boundary rather than OpenClaw's internal sandbox.
 
-## kube play モデル
+## 🧪 CI
 
-`launch` は instance ごとに `pod.yaml` を生成して、次を実行するイメージです。
+The included GitHub Actions workflow validates:
 
-```powershell
-podman kube play --replace --no-pod-prefix <pod.yaml>
-```
+- `uv sync`
+- Python source compilation
+- helper CLI help output
+- single-instance init
+- multi-instance dry-run generation
 
-`stop` は次を実行するイメージです。
-
-```powershell
-podman kube down <pod.yaml>
-```
-
-manifest には次が入ります。
-
-- pod 名
-- hostPort / containerPort の publish
-- `OLLAMA_API_KEY`, `OPENCLAW_GATEWAY_BIND`, `OPENCLAW_GATEWAY_TOKEN`
-- hostPath mount での `OPENCLAW_CONFIG_DIR -> /home/node/.openclaw`
-
-## 注意点
-
-- `podman` 未導入時、`doctor` は `[fail] podman` を返します。
-- `launch --dry-run` は API key と gateway token をマスクします。
-- `status` は `podman pod ps` ベース、`logs` は `podman pod logs --names` ベースです。
-- `gemma4:e2b` はローカル小型モデルなので、より大きいモデルより tool の安定性や安全余裕は低い可能性があります。
-- runtime の live 検証はまだ dry-run 止まりです。`podman` が入った環境で `kube play` 実機確認が必要です。
-
-## 参考
+## 📚 References
 
 - [OpenClaw Podman docs](https://docs.openclaw.ai/install/podman)
 - [OpenClaw Multiple Gateways](https://docs.openclaw.ai/gateway/multiple-gateways)
@@ -155,4 +178,4 @@ manifest には次が入ります。
 - [OpenClaw local models guidance](https://docs.openclaw.ai/gateway/local-models)
 - [Podman kube play](https://docs.podman.io/en/latest/markdown/podman-kube-play.1.html)
 - [Podman kube down](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html)
-- [Ollama OpenClaw integration docs](https://docs.ollama.com/integrations/openclaw)
+- [Ollama OpenClaw integration](https://docs.ollama.com/integrations/openclaw)

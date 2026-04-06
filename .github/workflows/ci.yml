@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync environment
+        run: uv sync
+
+      - name: Compile Python sources
+        run: uv run python -m compileall src
+
+      - name: CLI help
+        run: uv run openclaw-podman --help
+
+      - name: Single-instance init
+        run: uv run openclaw-podman init
+
+      - name: Single-instance env print
+        run: uv run openclaw-podman print-env
+
+      - name: Multi-instance init
+        run: uv run openclaw-podman init --count 3
+
+      - name: Multi-instance dry-run launch
+        run: uv run openclaw-podman launch --count 3 --dry-run
+
+      - name: Multi-instance dry-run stop
+        run: uv run openclaw-podman stop --count 3 --remove --dry-run
