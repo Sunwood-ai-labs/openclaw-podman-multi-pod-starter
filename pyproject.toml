@@ -1,0 +1,17 @@
+[project]
+name = "openclaw-podman-starter"
+version = "0.1.0"
+description = "Concept starter for running OpenClaw with Podman"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+openclaw-podman = "openclaw_podman_starter.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
