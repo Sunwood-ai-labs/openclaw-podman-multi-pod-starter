@@ -2,6 +2,8 @@
 
 # openclaw-podman-starter
 
+![Project header](./assets/header.svg)
+
 Run OpenClaw inside Podman with file-based `podman kube play` manifests, isolated multi-instance state, and validated local-model setups for Ollama Gemma and Z.AI GLM.
 
 [日本語 README](./README.ja.md)

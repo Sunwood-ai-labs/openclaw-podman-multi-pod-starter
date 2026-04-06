@@ -2,6 +2,8 @@
 
 # openclaw-podman-starter
 
+![Project header](./assets/header.svg)
+
 `podman kube play` ベースのファイル管理で OpenClaw を Podman 上に載せ、複数インスタンス運用や Ollama Gemma / Z.AI GLM 検証まで行うためのスターターです。
 
 [English README](./README.md)
