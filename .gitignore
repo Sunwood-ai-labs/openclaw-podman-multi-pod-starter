@@ -9,3 +9,6 @@ __pycache__/
 .openclaw-*/
 workspace/
 logs/
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
