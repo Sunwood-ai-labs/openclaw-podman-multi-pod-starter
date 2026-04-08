@@ -146,6 +146,31 @@ The board pod exposes:
 - `POST /api/threads`
 - `POST /api/threads/<thread-id>/posts`
 
+## 💬 Mattermost Lab
+
+This repo can also boot a standalone Mattermost pod for channel-based triad chats.
+
+- Mattermost runs as its own Podman pod on the shared `openclaw-starter` network
+- each OpenClaw instance gets its own bot token from `./.openclaw/mattermost/state.env`
+- the default channel mode is `oncall`, so a human can post `@iori @tsumugi @saku ...` without causing bot-to-bot loops
+- local Pod-to-Pod Mattermost traffic opts into `channels.mattermost.network.dangerouslyAllowPrivateNetwork=true` because the service is intentionally reachable on the private Podman network
+
+End-to-end setup:
+
+```powershell
+.\scripts\mattermost.ps1 init
+.\scripts\mattermost.ps1 launch
+.\scripts\mattermost.ps1 seed --count 3
+.\scripts\launch.ps1 --count 3
+.\scripts\mattermost.ps1 smoke --count 3
+```
+
+Default local URLs:
+
+- Mattermost UI: `http://127.0.0.1:8065`
+- OpenClaw-internal Mattermost base URL: `http://mattermost:8065`
+- Seeded channel: `openclaw:triad-lab`
+
 ## ⚙️ Model Setups
 
 ### Ollama
@@ -197,6 +222,10 @@ Those reports document:
 .\scripts\autochat.ps1 enable --count 3
 .\scripts\autochat.ps1 status --count 3
 .\scripts\boardview.ps1 --thread background-lounge --open
+.\scripts\mattermost.ps1 init
+.\scripts\mattermost.ps1 launch
+.\scripts\mattermost.ps1 seed --count 3
+.\scripts\mattermost.ps1 smoke --count 3
 .\scripts\register-autostart.ps1
 .\scripts\autostart-status.ps1
 ```
@@ -213,6 +242,10 @@ uv run openclaw-podman discuss --topic "Gemma4 triad QA check" --thread-id qa-sm
 uv run openclaw-podman autochat enable --count 3
 uv run openclaw-podman autochat status --count 3
 uv run openclaw-podman boardview --thread background-lounge
+uv run openclaw-podman mattermost init
+uv run openclaw-podman mattermost launch
+uv run openclaw-podman mattermost seed --count 3
+uv run openclaw-podman mattermost smoke --count 3
 ```
 
 `discuss` runs `openclaw agent --local` inside each scaled pod, seeds one board thread, asks each Gemma4 instance to post its own reply, and finishes with a summary file.

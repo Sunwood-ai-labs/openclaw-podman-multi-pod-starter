@@ -339,6 +339,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["channels"]["mattermost"]["botToken"], "test-bot-token")
             self.assertEqual(payload["channels"]["mattermost"]["chatmode"], "oncall")
             self.assertEqual(payload["channels"]["mattermost"]["groups"]["*"]["requireMention"], True)
+            self.assertEqual(payload["channels"]["mattermost"]["network"]["dangerouslyAllowPrivateNetwork"], True)
             self.assertEqual(payload["plugins"]["entries"]["mattermost"]["enabled"], True)
 
     def test_load_mattermost_config_uses_default_network(self) -> None:
@@ -352,6 +353,11 @@ class CliTests(unittest.TestCase):
             self.assertEqual(cfg.network, cli.DEFAULT_PODMAN_NETWORK)
             self.assertEqual(cli.mattermost_host_url(cfg), "http://127.0.0.1:8065")
             self.assertEqual(cli.mattermost_manifest_path(cfg), temp_root / ".openclaw" / "mattermost" / "pod.yaml")
+
+    def test_mattermost_persona_usernames_use_romanized_handles(self) -> None:
+        self.assertEqual(cli.mattermost_persona_username(1), "iori")
+        self.assertEqual(cli.mattermost_persona_username(2), "tsumugi")
+        self.assertEqual(cli.mattermost_persona_username(3), "saku")
 
 
 if __name__ == "__main__":

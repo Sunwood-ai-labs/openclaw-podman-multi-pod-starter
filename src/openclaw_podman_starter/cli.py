@@ -97,6 +97,7 @@ DEFAULTS = {
     "OPENCLAW_MATTERMOST_GROUP_POLICY": "open",
     "OPENCLAW_MATTERMOST_REPLY_TO_MODE": "all",
     "OPENCLAW_MATTERMOST_REQUIRE_MENTION": "true",
+    "OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK": "true",
     "OPENCLAW_MATTERMOST_TEAM_NAME": DEFAULT_MATTERMOST_TEAM_NAME,
     "OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME": "OpenClaw Lab",
     "OPENCLAW_MATTERMOST_CHANNEL_NAME": DEFAULT_MATTERMOST_CHANNEL_NAME,
@@ -105,6 +106,7 @@ DEFAULTS = {
     "OPENCLAW_MATTERMOST_ADMIN_EMAIL": "ocadmin@openclaw.local",
     "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": "operator",
     "OPENCLAW_MATTERMOST_OPERATOR_EMAIL": "operator@openclaw.local",
+    "OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY": "full_name",
 }
 
 RUNTIME_ENV_EXACT = {
@@ -1615,6 +1617,10 @@ def ensure_openclaw_config(cfg: Config) -> None:
         groups = ensure_object(mattermost, "groups")
         default_group = ensure_object(groups, "*")
         default_group["requireMention"] = truthy_env(cfg.raw_env.get("OPENCLAW_MATTERMOST_REQUIRE_MENTION"))
+        network = ensure_object(mattermost, "network")
+        network["dangerouslyAllowPrivateNetwork"] = truthy_env(
+            cfg.raw_env.get("OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK")
+        )
 
     tools = ensure_object(payload, "tools")
     tools["profile"] = "full"
@@ -2176,6 +2182,10 @@ def mattermost_manifest_for(cfg: MattermostConfig) -> dict[str, object]:
                         {"name": "MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION", "value": "true"},
                         {"name": "MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS", "value": "true"},
                         {"name": "MM_TEAMSETTINGS_ENABLEOPENSERVER", "value": "true"},
+                        {
+                            "name": "MM_TEAMSETTINGS_TEAMMATENAMEDISPLAY",
+                            "value": cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+                        },
                         {"name": "MM_LOGSETTINGS_CONSOLELEVEL", "value": "INFO"},
                     ],
                 }
@@ -2416,7 +2426,12 @@ def mattermost_login(cfg: MattermostConfig, username: str, password: str) -> str
 
 
 def mattermost_persona_username(instance_id: int) -> str:
-    return persona_for_instance(instance_id).slug
+    mapping = {
+        1: "iori",
+        2: "tsumugi",
+        3: "saku",
+    }
+    return mapping.get(instance_id, persona_for_instance(instance_id).slug)
 
 
 def mattermost_persona_display_name(instance_id: int) -> str:
@@ -2436,6 +2451,8 @@ def cmd_mattermost_init(args: argparse.Namespace) -> int:
         ("OPENCLAW_MATTERMOST_GROUP_POLICY", "open"),
         ("OPENCLAW_MATTERMOST_REPLY_TO_MODE", "all"),
         ("OPENCLAW_MATTERMOST_REQUIRE_MENTION", "true"),
+        ("OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK", "true"),
+        ("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
     ):
         write_env_value_if_missing(args.env_file, key, value)
 
@@ -2571,6 +2588,15 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
             channel_display_name,
         ],
         allowed_errors=("already exists",),
+    )
+    mattermost_mmctl(
+        cfg,
+        [
+            "config",
+            "set",
+            "TeamSettings.TeammateNameDisplay",
+            cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+        ],
     )
     mattermost_mmctl(
         cfg,
