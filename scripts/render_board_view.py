@@ -91,6 +91,17 @@ def markdown_to_html(text: str) -> str:
     blocks: list[str] = []
     list_buffer: list[str] = []
     paragraph_buffer: list[str] = []
+    kv_buffer: list[tuple[str, str]] = []
+
+    def flush_kv() -> None:
+        nonlocal kv_buffer
+        if kv_buffer:
+            rows = "".join(
+                f"<div class=\"kv-row\"><dt>{inline_format(key)}</dt><dd>{inline_format(value)}</dd></div>"
+                for key, value in kv_buffer
+            )
+            blocks.append(f"<dl class=\"kv-list\">{rows}</dl>")
+            kv_buffer = []
 
     def flush_list() -> None:
         nonlocal list_buffer
@@ -108,26 +119,38 @@ def markdown_to_html(text: str) -> str:
     for raw in lines:
         line = raw.rstrip()
         if not line.strip():
+            flush_kv()
             flush_list()
             flush_paragraph()
             continue
         if line.startswith("# "):
+            flush_kv()
             flush_list()
             flush_paragraph()
             blocks.append(f"<h2>{inline_format(line[2:].strip())}</h2>")
             continue
         if line.startswith("## "):
+            flush_kv()
             flush_list()
             flush_paragraph()
             blocks.append(f"<h3>{inline_format(line[3:].strip())}</h3>")
             continue
         if line.startswith("- "):
+            flush_kv()
             flush_paragraph()
             list_buffer.append(line[2:].strip())
             continue
+        kv_match = re.match(r"^([A-Za-z][A-Za-z0-9 /_-]*):\s*(.+)$", line.strip())
+        if kv_match:
+            flush_list()
+            flush_paragraph()
+            kv_buffer.append((kv_match.group(1).strip(), kv_match.group(2).strip()))
+            continue
+        flush_kv()
         flush_list()
         paragraph_buffer.append(line.strip())
 
+    flush_kv()
     flush_list()
     flush_paragraph()
     return "\n".join(blocks)
@@ -323,6 +346,31 @@ def render_layout(title: str, subtitle: str, body: str, nav: str = "") -> str:
     .bubble h3 {{ font-size: 18px; }}
     .bubble p, .bubble li {{ line-height: 1.7; }}
     .bubble ul {{ padding-left: 18px; display: grid; gap: 8px; }}
+    .kv-list {{
+      display: grid;
+      gap: 10px;
+      margin: 0;
+    }}
+    .kv-row {{
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.52);
+      border: 1px solid rgba(17,24,39,0.07);
+    }}
+    .kv-row dt {{
+      margin: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #7a4c17;
+      font-weight: 700;
+    }}
+    .kv-row dd {{
+      margin: 0;
+      line-height: 1.75;
+    }}
     .bubble code {{
       background: rgba(17,24,39,0.08);
       border-radius: 6px;
@@ -381,7 +429,7 @@ def bubble_html(message: ThreadMessage) -> str:
     return f"""
     <article class="bubble" data-align="{style['align']}" style="background:{style['surface']}; border-color:{style['accent']}22;">
       <header class="bubble-header">
-        <span class="badge"><span class="dot" style="background:{style['accent']}"></span>{html.escape(label)} · {kind_label}</span>
+        <span class="badge"><span class="dot" style="background:{style['accent']}"></span>{html.escape(label)} | {kind_label}</span>
         <span>{html.escape(message.timestamp_label)}</span>
       </header>
       <section>{message.html_body}</section>
@@ -403,7 +451,7 @@ def render_thread_page(viewer_root: Path, thread: ThreadView, threads: Iterable[
     body += '<p class="footer-note">Auto-refreshed snapshot. Refresh sooner if you know a new turn landed.</p>'
     html_text = render_layout(
         title=thread.title,
-        subtitle=f"Thread id: {thread.thread_id} · Updated {thread.updated_at.strftime('%Y-%m-%d %H:%M:%S')}",
+        subtitle=f"Thread id: {thread.thread_id} | Updated {thread.updated_at.strftime('%Y-%m-%d %H:%M:%S')}",
         body=body,
         nav="".join(nav_links),
     )

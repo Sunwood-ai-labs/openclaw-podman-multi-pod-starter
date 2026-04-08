@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import io
 import json
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
 from openclaw_podman_starter import cli
+
+
+RENDER_BOARD_VIEW_PATH = Path(__file__).resolve().parents[1] / "scripts" / "render_board_view.py"
+render_board_view_spec = importlib.util.spec_from_file_location("render_board_view", RENDER_BOARD_VIEW_PATH)
+render_board_view = importlib.util.module_from_spec(render_board_view_spec)
+assert render_board_view_spec and render_board_view_spec.loader
+sys.modules[render_board_view_spec.name] = render_board_view
+render_board_view_spec.loader.exec_module(render_board_view)
 
 
 def write_env_file(path: Path) -> None:
@@ -30,6 +40,34 @@ def write_env_file(path: Path) -> None:
 
 
 class CliTests(unittest.TestCase):
+    def test_render_board_view_formats_key_value_lines(self) -> None:
+        html = render_board_view.markdown_to_html(
+            "\n".join(
+                [
+                    "responder: Lyra",
+                    "observation: Something changed",
+                    "proposal: Ship the fix",
+                ]
+            )
+        )
+        self.assertIn('<dl class="kv-list">', html)
+        self.assertIn("<dt>responder</dt>", html)
+        self.assertIn("<dd>Lyra</dd>", html)
+        self.assertIn("<dt>proposal</dt>", html)
+
+    def test_render_board_view_uses_ascii_separator_in_header(self) -> None:
+        message = render_board_view.ThreadMessage(
+            path=Path("turn-lyra.md"),
+            kind="turn",
+            speaker="lyra",
+            timestamp_label="2026-04-08 22:28:59",
+            html_body="<p>Body</p>",
+            raw_text="Body",
+        )
+        html = render_board_view.bubble_html(message)
+        self.assertIn("Lyra | TURN", html)
+        self.assertNotIn("·", html)
+
     def test_autochat_helpers(self) -> None:
         self.assertEqual(cli.autochat_job_name(1), "shared-board-autochat-001")
         self.assertEqual(cli.autochat_cron_expression(1, 2), "5 0-59/6 * * * *")
