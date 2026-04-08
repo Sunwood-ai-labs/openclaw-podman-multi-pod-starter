@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -62,6 +63,12 @@ AUTOCHAT_JOB_PREFIX = "shared-board-autochat"
 MATTERMOST_ADMIN_PASSWORD_KEY = "OPENCLAW_MATTERMOST_ADMIN_PASSWORD"
 MATTERMOST_OPERATOR_PASSWORD_KEY = "OPENCLAW_MATTERMOST_OPERATOR_PASSWORD"
 MATTERMOST_BOT_TOKEN_KEY_TEMPLATE = "OPENCLAW_MATTERMOST_BOT_TOKEN_{instance_id:03d}"
+MATTERMOST_ICON_ASSET_DIR = REPO_ROOT / "assets" / "mattermost-bots"
+MATTERMOST_ICON_FILENAMES = {
+    1: "iori.png",
+    2: "tsumugi.png",
+    3: "saku.png",
+}
 
 DEFAULTS = {
     "OPENCLAW_CONTAINER": "openclaw",
@@ -2384,6 +2391,32 @@ def wait_for_mattermost_ready(cfg: MattermostConfig, timeout_seconds: int = 180)
     raise SystemExit(f"Mattermost did not become ready within {timeout_seconds}s ({last_error})")
 
 
+def mattermost_http_request(
+    cfg: MattermostConfig,
+    path: str,
+    method: str = "GET",
+    token: str | None = None,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    accept: str = "application/json",
+) -> tuple[int, dict[str, str], bytes]:
+    request_headers: dict[str, str] = {}
+    if accept:
+        request_headers["Accept"] = accept
+    if headers:
+        request_headers.update(headers)
+    if token:
+        request_headers["Authorization"] = f"Bearer {token}"
+    request = urllib_request.Request(
+        f"{mattermost_host_url(cfg)}{path}",
+        data=body,
+        method=method,
+        headers=request_headers,
+    )
+    with urllib_request.urlopen(request, timeout=30) as response:
+        return response.status, dict(response.headers.items()), response.read()
+
+
 def mattermost_api_request(
     cfg: MattermostConfig,
     path: str,
@@ -2392,24 +2425,22 @@ def mattermost_api_request(
     payload: dict[str, object] | None = None,
 ) -> tuple[int, dict[str, str], object | None]:
     body: bytes | None = None
-    headers = {"Accept": "application/json"}
+    headers: dict[str, str] = {}
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    request = urllib_request.Request(
-        f"{mattermost_host_url(cfg)}{path}",
-        data=body,
+    status, response_headers, raw_body = mattermost_http_request(
+        cfg,
+        path,
         method=method,
+        token=token,
+        body=body,
         headers=headers,
     )
-    with urllib_request.urlopen(request, timeout=30) as response:
-        raw_body = response.read()
-        parsed: object | None = None
-        if raw_body:
-            parsed = json.loads(raw_body.decode("utf-8"))
-        return response.status, dict(response.headers.items()), parsed
+    parsed: object | None = None
+    if raw_body:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    return status, response_headers, parsed
 
 
 def mattermost_login(cfg: MattermostConfig, username: str, password: str) -> str:
@@ -2425,6 +2456,50 @@ def mattermost_login(cfg: MattermostConfig, username: str, password: str) -> str
     return token
 
 
+def mattermost_user_id(cfg: MattermostConfig, username: str, token: str) -> str:
+    _, _, payload = mattermost_api_request(cfg, f"/api/v4/users/username/{username}", token=token)
+    return str((payload or {}).get("id", "")).strip()
+
+
+def mattermost_upload_user_image(cfg: MattermostConfig, user_id: str, image_path: Path, token: str) -> None:
+    if not image_path.exists():
+        raise SystemExit(f"Mattermost bot icon asset is missing: {image_path}")
+
+    boundary = f"----OpenClawMattermost{secrets.token_hex(12)}"
+    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode("ascii"),
+            f'Content-Disposition: form-data; name="image"; filename="{image_path.name}"\r\n'.encode("utf-8"),
+            f"Content-Type: {mime_type}\r\n\r\n".encode("ascii"),
+            image_path.read_bytes(),
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("ascii"),
+        ]
+    )
+    mattermost_http_request(
+        cfg,
+        f"/api/v4/users/{user_id}/image",
+        method="POST",
+        token=token,
+        body=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+
+def mattermost_verify_user_image(cfg: MattermostConfig, user_id: str, token: str) -> tuple[str, int]:
+    status, headers, raw_body = mattermost_http_request(
+        cfg,
+        f"/api/v4/users/{user_id}/image",
+        token=token,
+        accept="image/*",
+    )
+    content_type = headers.get("Content-Type", "")
+    if status != 200 or not content_type.startswith("image/") or not raw_body:
+        raise SystemExit(f"Mattermost avatar verification failed for user {user_id}.")
+    return content_type, len(raw_body)
+
+
 def mattermost_persona_username(instance_id: int) -> str:
     mapping = {
         1: "iori",
@@ -2436,6 +2511,14 @@ def mattermost_persona_username(instance_id: int) -> str:
 
 def mattermost_persona_display_name(instance_id: int) -> str:
     return persona_for_instance(instance_id).display_name
+
+
+def mattermost_persona_avatar_file(instance_id: int) -> Path:
+    filename = MATTERMOST_ICON_FILENAMES.get(
+        instance_id,
+        f"{mattermost_persona_username(instance_id)}.png",
+    )
+    return MATTERMOST_ICON_ASSET_DIR / filename
 
 
 def cmd_mattermost_init(args: argparse.Namespace) -> int:
@@ -2604,6 +2687,7 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
         allowed_errors=("already a member", "is already in channel"),
     )
     ensure_mattermost_admin_session(cfg, admin_username, admin_password)
+    admin_api_token = mattermost_login(cfg, admin_username, admin_password)
 
     for instance_id in range(1, args.count + 1):
         token_key = mattermost_token_key_for_instance(instance_id)
@@ -2640,6 +2724,13 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
                 f"If the bot already existed, remove it or provide {token_key} in {mattermost_state_env_file(cfg.root_dir)}."
             )
 
+        user_id = mattermost_user_id(cfg, username, admin_api_token)
+        if not user_id:
+            raise SystemExit(f"Could not resolve Mattermost bot user id for {username}.")
+        avatar_file = mattermost_persona_avatar_file(instance_id)
+        mattermost_upload_user_image(cfg, user_id, avatar_file, admin_api_token)
+        content_type, image_bytes = mattermost_verify_user_image(cfg, user_id, admin_api_token)
+
         mattermost_mmctl(
             cfg,
             ["team", "users", "add", team_name, username],
@@ -2650,6 +2741,7 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
             ["channel", "users", "add", f"{team_name}:{channel_name}", username],
             allowed_errors=("already a member", "is already in channel"),
         )
+        print_kv(f"bot {instance_id}", f"{username} avatar={avatar_file.name} type={content_type} bytes={image_bytes}")
 
     print("[ok] Mattermost seeded")
     print_kv("team", team_name)

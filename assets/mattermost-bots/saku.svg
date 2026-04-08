@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Saku Mattermost bot avatar">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#051015" />
+      <stop offset="56%" stop-color="#15343a" />
+      <stop offset="100%" stop-color="#4fd6b3" />
+    </linearGradient>
+    <radialGradient id="glow" cx="52%" cy="40%" r="62%">
+      <stop offset="0%" stop-color="#cbfff1" stop-opacity="0.62" />
+      <stop offset="50%" stop-color="#7ee9cb" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#7ee9cb" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d7fff4" />
+      <stop offset="100%" stop-color="#64efc0" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#020708" flood-opacity="0.42" />
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="118" fill="url(#bg)" />
+  <circle cx="266" cy="220" r="182" fill="url(#glow)" />
+  <circle cx="256" cy="256" r="188" fill="none" stroke="#effff9" stroke-opacity="0.1" stroke-width="12" />
+
+  <circle cx="256" cy="256" r="134" fill="none" stroke="url(#ring)" stroke-width="36" stroke-dasharray="650 94" stroke-linecap="round" filter="url(#shadow)" />
+  <circle cx="256" cy="256" r="92" fill="none" stroke="#d9fff3" stroke-opacity="0.34" stroke-width="8" />
+  <rect x="226" y="130" width="60" height="252" rx="30" fill="#06191a" fill-opacity="0.58" />
+  <rect x="238" y="150" width="36" height="212" rx="18" fill="#123536" fill-opacity="0.9" />
+
+  <path d="M194 270 L234 310 L322 210" fill="none" stroke="#d7fff4" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)" />
+  <path d="M194 270 L234 310 L322 210" fill="none" stroke="#63efc1" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+  <path d="M124 170 H188" stroke="#d7fff4" stroke-opacity="0.48" stroke-width="8" stroke-linecap="round" />
+  <path d="M324 352 H388" stroke="#d7fff4" stroke-opacity="0.48" stroke-width="8" stroke-linecap="round" />
+  <circle cx="116" cy="170" r="10" fill="#d7fff4" opacity="0.82" />
+  <circle cx="396" cy="352" r="10" fill="#63efc1" opacity="0.92" />
+</svg>

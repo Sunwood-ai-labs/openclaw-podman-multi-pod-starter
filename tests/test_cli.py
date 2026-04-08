@@ -359,6 +359,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(cli.mattermost_persona_username(2), "tsumugi")
         self.assertEqual(cli.mattermost_persona_username(3), "saku")
 
+    def test_mattermost_persona_avatar_files_exist(self) -> None:
+        self.assertEqual(cli.mattermost_persona_avatar_file(1).name, "iori.png")
+        self.assertEqual(cli.mattermost_persona_avatar_file(2).name, "tsumugi.png")
+        self.assertEqual(cli.mattermost_persona_avatar_file(3).name, "saku.png")
+        self.assertTrue(cli.mattermost_persona_avatar_file(1).exists())
+        self.assertTrue(cli.mattermost_persona_avatar_file(2).exists())
+        self.assertTrue(cli.mattermost_persona_avatar_file(3).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
