@@ -156,6 +156,38 @@ def markdown_to_html(text: str) -> str:
     return "\n".join(blocks)
 
 
+def structured_chat_html(text: str) -> str | None:
+    pairs: list[tuple[str, str]] = []
+    for raw in text.strip().splitlines():
+        match = re.match(r"^([A-Za-z][A-Za-z0-9 /_-]*):\s*(.+)$", raw.strip())
+        if not match:
+            return None
+        pairs.append((match.group(1).strip().lower(), match.group(2).strip()))
+
+    if len(pairs) < 2:
+        return None
+
+    recognized = {"responder", "observation", "proposal"}
+    if not any(key in recognized or key.startswith("handoff question") for key, _ in pairs):
+        return None
+
+    blocks: list[str] = []
+    for key, value in pairs:
+        if key == "responder":
+            continue
+        if key == "observation":
+            blocks.append(f'<div class="chat-card"><p class="chat-label">Just noticed</p><p>{inline_format(value)}</p></div>')
+            continue
+        if key == "proposal":
+            blocks.append(f'<div class="chat-card"><p class="chat-label">Thinking</p><p>{inline_format(value)}</p></div>')
+            continue
+        if key.startswith("handoff question"):
+            blocks.append(f'<div class="chat-card handoff"><p class="chat-label">Throwing it over</p><p>{inline_format(value)}</p></div>')
+            continue
+        blocks.append(f'<div class="chat-card"><p class="chat-label">{inline_format(key)}</p><p>{inline_format(value)}</p></div>')
+    return "".join(blocks) if blocks else None
+
+
 def inline_format(text: str) -> str:
     escaped = html.escape(text)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
@@ -166,12 +198,13 @@ def inline_format(text: str) -> str:
 def build_message(path: Path) -> ThreadMessage:
     text = path.read_text(encoding="utf-8")
     modified = datetime.fromtimestamp(path.stat().st_mtime)
+    structured = structured_chat_html(text)
     return ThreadMessage(
         path=path,
         kind=detect_kind(path),
         speaker=detect_speaker(path),
         timestamp_label=modified.strftime("%Y-%m-%d %H:%M:%S"),
-        html_body=markdown_to_html(text),
+        html_body=structured or markdown_to_html(text),
         raw_text=text,
     )
 
@@ -262,6 +295,19 @@ def render_layout(title: str, subtitle: str, body: str, nav: str = "") -> str:
       text-transform: uppercase;
       color: #965e22;
       margin: 0 0 10px;
+    }}
+    .build-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(17,24,39,0.08);
+      border: 1px solid rgba(17,24,39,0.08);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 14px;
     }}
     h1 {{
       margin: 0;
@@ -378,6 +424,26 @@ def render_layout(title: str, subtitle: str, body: str, nav: str = "") -> str:
       font-family: "Cascadia Code", "Consolas", monospace;
       font-size: 0.92em;
     }}
+    .chat-card {{
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(17,24,39,0.08);
+    }}
+    .chat-card.handoff {{
+      background: rgba(255,244,214,0.82);
+      border-color: rgba(240,139,50,0.25);
+    }}
+    .chat-label {{
+      margin: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #7a4c17;
+      font-weight: 700;
+    }}
     .bubble-header {{
       display: flex;
       justify-content: space-between;
@@ -409,7 +475,8 @@ def render_layout(title: str, subtitle: str, body: str, nav: str = "") -> str:
 <body>
   <main class="shell">
     <section class="hero">
-      <p class="eyebrow">OpenClaw Shared Board Viewer</p>
+      <p class="eyebrow">Triad Lounge</p>
+      <p class="build-chip">Viewer V2 | chat-style</p>
       <h1>{html.escape(title)}</h1>
       <p class="subtitle">{html.escape(subtitle)}</p>
       {nav}

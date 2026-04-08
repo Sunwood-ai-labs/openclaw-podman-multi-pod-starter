@@ -162,22 +162,27 @@ def turn_path(role: str, stamp: str) -> Path:
 
 def build_topic_prompt(role: str) -> str:
     return (
-        "Write only Japanese markdown for a file named topic.md.\n"
+        "Write only casual Japanese markdown for a file named topic.md.\n"
         "No code fences. No explanation outside the markdown. The strings DONE, POSTED, and IDLE are forbidden.\n\n"
+        "Tone:\n"
+        "- relaxed team group chat\n"
+        "- friendly, short, a little playful\n"
+        "- not a technical memo\n"
+        "- no bullet list after the title\n\n"
         "Requirements:\n"
-        "- Start with a title line for a long-running shared-board conversation.\n"
-        f"- Starter: {DISPLAY[role]}\n"
-        "- Explain that Aster, Lyra, and Noctis are continuously discussing repo state, pod health, and next actions.\n"
-        "- Ask Lyra to continue first.\n"
+        "- Start with a chat-room style title line.\n"
+        f"- Mention that {DISPLAY[role]} opened the room.\n"
+        "- Explain that Aster, Lyra, and Noctis are hanging out here and can casually talk about what they are noticing.\n"
+        "- Invite Lyra to jump in first.\n"
     )
 
 
 def build_turn_prompt(role: str, topic_text: str, latest_text: str) -> str:
     next_name = DISPLAY[NEXT[role]]
     return (
-        "Write only Japanese markdown for one background board post.\n"
+        "Write only casual Japanese markdown for one group-chat message.\n"
         "No code fences. No explanation outside the markdown. The strings DONE, POSTED, and IDLE are forbidden.\n\n"
-        f"Responder: {DISPLAY[role]}\n"
+        f"Speaker: {DISPLAY[role]}\n"
         f"Next sibling to hand off to: {next_name}\n\n"
         "Thread topic:\n"
         f"{topic_text}\n\n"
@@ -186,12 +191,12 @@ def build_turn_prompt(role: str, topic_text: str, latest_text: str) -> str:
         "Important:\n"
         "- Do not repeat the topic verbatim.\n"
         "- Do not copy the latest post verbatim.\n"
-        "- Add a fresh observation or proposal of your own.\n\n"
-        "Required sections:\n"
-        f"- responder: {DISPLAY[role]}\n"
-        "- observation:\n"
-        "- proposal:\n"
-        f"- handoff question to {next_name}:\n"
+        "- Sound like a teammate in a lounge chat, not a report writer.\n"
+        "- Keep it light and natural, but still grounded in what just happened.\n"
+        "- Do not use labels like 'responder:', 'observation:', 'proposal:', or 'handoff question:'.\n"
+        "- No bullet list.\n"
+        "- 2 to 5 short lines or short paragraphs.\n"
+        f"- Naturally toss the conversation to {next_name} at the end.\n"
     )
 
 
@@ -206,7 +211,9 @@ def generate_markdown(prompt: str, session_id: str, timeout_seconds: int, agent_
             prompt
             + "\n\nYour previous response was invalid because it was only a status word.\n"
             + "Return only the markdown body. Do not say DONE, POSTED, or IDLE.\n"
-            + "Write at least 4 non-empty markdown lines.\n"
+            + "Keep it casual and chat-like.\n"
+            + "Do not use report labels or bullet points.\n"
+            + "Write at least 2 non-empty lines.\n"
         )
     raise RuntimeError(f"markdown generation returned only status text: {json.dumps(payload, ensure_ascii=False, indent=2)}")
 

@@ -55,6 +55,23 @@ class CliTests(unittest.TestCase):
         self.assertIn("<dd>Lyra</dd>", html)
         self.assertIn("<dt>proposal</dt>", html)
 
+    def test_render_board_view_structures_chat_like_cards(self) -> None:
+        html = render_board_view.structured_chat_html(
+            "\n".join(
+                [
+                    "responder: Lyra",
+                    "observation: Something changed",
+                    "proposal: Ship the fix",
+                    "handoff question to Noctis: What do you think?",
+                ]
+            )
+        )
+        assert html is not None
+        self.assertIn('class="chat-card"', html)
+        self.assertIn("Just noticed", html)
+        self.assertIn("Thinking", html)
+        self.assertIn("Throwing it over", html)
+
     def test_render_board_view_uses_ascii_separator_in_header(self) -> None:
         message = render_board_view.ThreadMessage(
             path=Path("turn-lyra.md"),
