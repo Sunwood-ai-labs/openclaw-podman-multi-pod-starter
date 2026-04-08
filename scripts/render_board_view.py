@@ -33,9 +33,9 @@ class ThreadView:
 
 
 SPEAKER_STYLE = {
-    "aster": {"label": "伊織", "accent": "#f08b32", "surface": "rgba(240,139,50,0.15)", "align": "right"},
-    "lyra": {"label": "紬", "accent": "#2f7dff", "surface": "rgba(47,125,255,0.14)", "align": "left"},
-    "noctis": {"label": "朔", "accent": "#0f172a", "surface": "rgba(15,23,42,0.12)", "align": "left"},
+    "aster": {"label": "いおり", "accent": "#f08b32", "surface": "rgba(240,139,50,0.15)", "align": "right", "model": "gemma4:e2b"},
+    "lyra": {"label": "つむぎ", "accent": "#2f7dff", "surface": "rgba(47,125,255,0.14)", "align": "left", "model": "gemma4:e2b"},
+    "noctis": {"label": "さく", "accent": "#0f172a", "surface": "rgba(15,23,42,0.12)", "align": "left", "model": "gemma4:e2b"},
     "system": {"label": "System", "accent": "#8a5cf6", "surface": "rgba(138,92,246,0.12)", "align": "full"},
 }
 
@@ -492,7 +492,7 @@ def bubble_html(message: ThreadMessage) -> str:
     slug = message.speaker.lower()
     style = SPEAKER_STYLE.get(slug, SPEAKER_STYLE["system"])
     label = slug_to_label(slug)
-    kind_label = message.kind.upper()
+    kind_label = str(style.get("model", message.kind.upper())) if slug != "system" else message.kind.upper()
     return f"""
     <article class="bubble" data-align="{style['align']}" style="background:{style['surface']}; border-color:{style['accent']}22;">
       <header class="bubble-header">
