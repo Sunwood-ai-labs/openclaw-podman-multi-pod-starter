@@ -2280,6 +2280,12 @@ def mattermost_thread_url(cfg: MattermostConfig, root_post_id: str) -> str:
     return f"{mattermost_host_url(cfg)}/{team_name}/pl/{root_post_id}"
 
 
+def mattermost_channel_url(cfg: MattermostConfig) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    channel_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", DEFAULT_MATTERMOST_CHANNEL_NAME)
+    return f"{mattermost_host_url(cfg)}/{team_name}/channels/{channel_name}"
+
+
 def mattermost_manifest_for(cfg: MattermostConfig) -> dict[str, object]:
     return {
         "apiVersion": "v1",
@@ -2682,6 +2688,40 @@ def recent_mattermost_thread_messages(cfg: MattermostConfig, token: str, root_po
     return result
 
 
+def mattermost_channel_id(cfg: MattermostConfig, token: str) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    channel_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", DEFAULT_MATTERMOST_CHANNEL_NAME)
+    _, _, team_payload = mattermost_api_request(cfg, f"/api/v4/teams/name/{team_name}", token=token)
+    team_id = str((team_payload or {}).get("id", "")).strip()
+    if not team_id:
+        raise SystemExit(f"Could not resolve Mattermost team: {team_name}")
+    _, _, channel_payload = mattermost_api_request(cfg, f"/api/v4/teams/{team_id}/channels/name/{channel_name}", token=token)
+    channel_id = str((channel_payload or {}).get("id", "")).strip()
+    if not channel_id:
+        raise SystemExit(f"Could not resolve Mattermost channel: {team_name}:{channel_name}")
+    return channel_id
+
+
+def recent_mattermost_channel_posts(cfg: MattermostConfig, token: str, channel_id: str, limit: int = 8) -> list[dict[str, object]]:
+    _, _, payload = mattermost_api_request(
+        cfg,
+        f"/api/v4/channels/{channel_id}/posts?page=0&per_page=100",
+        token=token,
+    )
+    if not isinstance(payload, dict):
+        return []
+    posts = payload.get("posts")
+    order = payload.get("order")
+    if not isinstance(posts, dict) or not isinstance(order, list):
+        return []
+    result: list[dict[str, object]] = []
+    for post_id in reversed(order[-limit:]):
+        post = posts.get(post_id)
+        if isinstance(post, dict):
+            result.append(post)
+    return result
+
+
 def cmd_mattermost_init(args: argparse.Namespace) -> int:
     ensure_env_file(args.env_file)
     cfg = load_mattermost_config(args.env_file)
@@ -3057,22 +3097,15 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
         if isinstance(schedule, dict):
             print(f"  schedule: {json.dumps(schedule, ensure_ascii=False)}")
 
-    lounge_state = load_mattermost_lounge_state(args.env_file)
-    print_kv("state file", str(mattermost_lounge_state_path(args.env_file)))
-    root_post_id = str(lounge_state.get("root_post_id", "")) if lounge_state else ""
-    if not root_post_id:
-        print("  root post: missing")
-        return 1 if overall == 0 else overall
-
-    print_kv("root post", root_post_id)
-    print_kv("thread url", mattermost_thread_url(mm_cfg, root_post_id))
+    print_kv("channel url", mattermost_channel_url(mm_cfg))
     try:
         token = mattermost_login(
             mm_cfg,
             mm_cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"],
             mattermost_state_values(args.env_file)[MATTERMOST_OPERATOR_PASSWORD_KEY],
         )
-        for post in recent_mattermost_thread_messages(mm_cfg, token, root_post_id):
+        channel_id = mattermost_channel_id(mm_cfg, token)
+        for post in recent_mattermost_channel_posts(mm_cfg, token, channel_id):
             user_id = str(post.get("user_id", ""))
             speaker = user_id
             for instance_id in instance_ids:
@@ -3104,11 +3137,7 @@ def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
     if args.wait_seconds > 0:
         time.sleep(args.wait_seconds)
 
-    lounge_state = load_mattermost_lounge_state(args.env_file)
-    root_post_id = str(lounge_state.get("root_post_id", "")) if lounge_state else ""
-    if root_post_id:
-        print_kv("root post", root_post_id)
-        print_kv("thread url", mattermost_thread_url(load_mattermost_config(args.env_file), root_post_id))
+    print_kv("channel url", mattermost_channel_url(load_mattermost_config(args.env_file)))
     return 0
 
 
