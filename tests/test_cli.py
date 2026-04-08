@@ -100,6 +100,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(cli.previous_speaker(1), "noctis")
         self.assertEqual(cli.previous_speaker(2), "aster")
         self.assertEqual(cli.previous_speaker(3), "lyra")
+        self.assertEqual(cli.mattermost_lounge_job_name(1), "mattermost-lounge-autochat-001")
+        self.assertEqual(cli.mattermost_lounge_agent_id(2), "mattermost-lounge-tsumugi")
 
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
@@ -185,6 +187,7 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "archive").exists())
             self.assertTrue((board_root / "templates" / "topic-template.md").exists())
             self.assertTrue((board_root / "tools" / "autochat_turn.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_autochat_turn.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())

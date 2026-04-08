@@ -171,6 +171,16 @@ Default local URLs:
 - OpenClaw-internal Mattermost base URL: `http://mattermost:8065`
 - Seeded channel: `openclaw:triad-lab`
 
+Autonomous lounge mode:
+
+```powershell
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
+.\scripts\mattermost.ps1 lounge status --count 3
+```
+
+That mode creates pod-local cron jobs so `iori -> tsumugi -> saku` keep one shared Mattermost lounge thread moving in the background.
+
 ## ⚙️ Model Setups
 
 ### Ollama
@@ -226,6 +236,9 @@ Those reports document:
 .\scripts\mattermost.ps1 launch
 .\scripts\mattermost.ps1 seed --count 3
 .\scripts\mattermost.ps1 smoke --count 3
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3
 .\scripts\register-autostart.ps1
 .\scripts\autostart-status.ps1
 ```
@@ -246,6 +259,9 @@ uv run openclaw-podman mattermost init
 uv run openclaw-podman mattermost launch
 uv run openclaw-podman mattermost seed --count 3
 uv run openclaw-podman mattermost smoke --count 3
+uv run openclaw-podman mattermost lounge enable --count 3
+uv run openclaw-podman mattermost lounge status --count 3
+uv run openclaw-podman mattermost lounge run-now --count 3
 ```
 
 `discuss` runs `openclaw agent --local` inside each scaled pod, seeds one board thread, asks each Gemma4 instance to post its own reply, and finishes with a summary file.

@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
 AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "autochat_turn.py"
+MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
 BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
 BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
 BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
@@ -60,6 +61,7 @@ BOARD_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: shared board sc
 DEFAULT_DISCUSSION_INSTANCE_COUNT = 3
 AUTOCHAT_THREAD_ID = "background-lounge"
 AUTOCHAT_JOB_PREFIX = "shared-board-autochat"
+MATTERMOST_LOUNGE_JOB_PREFIX = "mattermost-lounge-autochat"
 MATTERMOST_ADMIN_PASSWORD_KEY = "OPENCLAW_MATTERMOST_ADMIN_PASSWORD"
 MATTERMOST_OPERATOR_PASSWORD_KEY = "OPENCLAW_MATTERMOST_OPERATOR_PASSWORD"
 MATTERMOST_BOT_TOKEN_KEY_TEMPLATE = "OPENCLAW_MATTERMOST_BOT_TOKEN_{instance_id:03d}"
@@ -592,6 +594,7 @@ def shared_board_root(instance: ScaledInstance) -> Path:
 def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
     board_root = shared_board_root(instance)
     autochat_script = AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
     render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
     board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
     board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
@@ -678,6 +681,7 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         board_root / "templates" / "reply-template.md": reply_template.strip() + "\n",
         board_root / "templates" / "summary-template.md": summary_template.strip() + "\n",
         board_root / "tools" / "autochat_turn.py": autochat_script if autochat_script.endswith("\n") else autochat_script + "\n",
+        board_root / "tools" / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
         board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
         board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
         board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
@@ -691,7 +695,7 @@ def scaffold_shared_board(instance: ScaledInstance) -> None:
 
     for path, content in render_shared_board_files(instance).items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.name in {"autochat_turn.py", "render_board_view.py", "shared_board_service.py", "shared_board_app.html"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
+        if path.name in {"autochat_turn.py", "mattermost_autochat_turn.py", "render_board_view.py", "shared_board_service.py", "shared_board_app.html"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
             path.write_text(content, encoding="utf-8")
 
 
@@ -774,8 +778,16 @@ def autochat_job_name(instance_id: int) -> str:
     return f"{AUTOCHAT_JOB_PREFIX}-{instance_id:03d}"
 
 
+def mattermost_lounge_job_name(instance_id: int) -> str:
+    return f"{MATTERMOST_LOUNGE_JOB_PREFIX}-{instance_id:03d}"
+
+
 def autochat_agent_id(instance_id: int) -> str:
     return f"autochat-{persona_for_instance(instance_id).slug}"
+
+
+def mattermost_lounge_agent_id(instance_id: int) -> str:
+    return f"mattermost-lounge-{mattermost_persona_username(instance_id)}"
 
 
 def discuss_agent_id(instance_id: int) -> str:
@@ -1118,6 +1130,18 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
     ).strip()
 
 
+def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
+    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py"
+    return dedent(
+        f"""\
+        Use the exec tool to run exactly this command and nothing else:
+        python3 {script_path} --instance {instance.instance_id} --timeout 180
+
+        After the exec tool finishes, reply with exactly the stdout from that command.
+        """
+    ).strip()
+
+
 def discussion_result_text(payload: dict[str, object]) -> str:
     payloads = payload.get("payloads")
     if not isinstance(payloads, list):
@@ -1268,6 +1292,18 @@ def autochat_job(instance: ScaledInstance) -> dict[str, object] | None:
     return None
 
 
+def mattermost_lounge_job(instance: ScaledInstance) -> dict[str, object] | None:
+    payload = cron_jobs_store(instance)
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, list):
+        return None
+    target_name = mattermost_lounge_job_name(instance.instance_id)
+    for job in jobs:
+        if isinstance(job, dict) and job.get("name") == target_name:
+            return job
+    return None
+
+
 def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_seconds: int) -> dict[str, object]:
     job = autochat_job(instance)
     if job is not None:
@@ -1300,8 +1336,45 @@ def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_se
     )
 
 
+def add_mattermost_lounge_job(instance: ScaledInstance, interval_minutes: int, timeout_seconds: int) -> dict[str, object]:
+    job = mattermost_lounge_job(instance)
+    if job is not None:
+        openclaw_cron_json(instance, ["rm", str(job.get("id"))])
+
+    prompt = build_mattermost_lounge_turn_prompt(instance)
+    cron_expr = autochat_cron_expression(instance.instance_id, interval_minutes)
+    return openclaw_cron_json(
+        instance,
+        [
+            "add",
+            "--name",
+            mattermost_lounge_job_name(instance.instance_id),
+            "--agent",
+            "main",
+            "--session",
+            "isolated",
+            "--cron",
+            cron_expr,
+            "--exact",
+            "--no-deliver",
+            "--timeout-seconds",
+            str(timeout_seconds),
+            "--thinking",
+            "off",
+            "--message",
+            prompt,
+        ],
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def ensure_autochat_agent(instance: ScaledInstance) -> None:
     agent_id = autochat_agent_id(instance.instance_id)
+    ensure_named_agent(instance, agent_id)
+
+
+def ensure_mattermost_lounge_agent(instance: ScaledInstance) -> None:
+    agent_id = mattermost_lounge_agent_id(instance.instance_id)
     ensure_named_agent(instance, agent_id)
 
 
@@ -1348,6 +1421,14 @@ def remove_autochat_job(instance: ScaledInstance) -> bool:
     return True
 
 
+def remove_mattermost_lounge_job(instance: ScaledInstance) -> bool:
+    job = mattermost_lounge_job(instance)
+    if job is None:
+        return False
+    openclaw_cron_json(instance, ["rm", str(job.get("id"))])
+    return True
+
+
 def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
     job = autochat_job(instance)
     if job is None:
@@ -1357,6 +1438,39 @@ def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> 
         ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
         timeout_seconds=max(120, timeout_ms // 1000 + 30),
     )
+
+
+def run_mattermost_lounge_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
+    job = mattermost_lounge_job(instance)
+    if job is None:
+        raise SystemExit(f"No Mattermost lounge job found for instance {instance.instance_id}.")
+    return openclaw_cron_json_no_flag(
+        instance,
+        ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
+        timeout_seconds=max(120, timeout_ms // 1000 + 30),
+    )
+
+
+def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: int = 180) -> str:
+    completed = run_podman_command(
+        instance,
+        [
+            "python3",
+            f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py",
+            "--instance",
+            str(instance.instance_id),
+            "--timeout",
+            str(timeout_seconds),
+        ],
+        timeout_seconds=max(120, timeout_seconds + 60),
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"mattermost lounge turn failed for instance {instance.instance_id}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    return (completed.stdout.strip() or completed.stderr.strip()).strip()
 
 def parse_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -2152,6 +2266,19 @@ def mattermost_host_url(cfg: MattermostConfig) -> str:
     return f"http://{host}:{cfg.host_port}"
 
 
+def mattermost_lounge_root(env_file: Path) -> Path:
+    return shared_board_root(scaled_instance(env_file, 1)) / "mattermost-lounge"
+
+
+def mattermost_lounge_state_path(env_file: Path) -> Path:
+    return mattermost_lounge_root(env_file) / "state.json"
+
+
+def mattermost_thread_url(cfg: MattermostConfig, root_post_id: str) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    return f"{mattermost_host_url(cfg)}/{team_name}/pl/{root_post_id}"
+
+
 def mattermost_manifest_for(cfg: MattermostConfig) -> dict[str, object]:
     return {
         "apiVersion": "v1",
@@ -2521,6 +2648,39 @@ def mattermost_persona_avatar_file(instance_id: int) -> Path:
     return MATTERMOST_ICON_ASSET_DIR / filename
 
 
+def load_mattermost_lounge_state(env_file: Path) -> dict[str, object]:
+    path = mattermost_lounge_state_path(env_file)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Mattermost lounge state is not valid JSON: {path} ({exc})") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"Mattermost lounge state is not a JSON object: {path}")
+    return payload
+
+
+def recent_mattermost_thread_messages(cfg: MattermostConfig, token: str, root_post_id: str, limit: int = 6) -> list[dict[str, object]]:
+    _, _, payload = mattermost_api_request(
+        cfg,
+        f"/api/v4/posts/{root_post_id}/thread?perPage=200",
+        token=token,
+    )
+    if not isinstance(payload, dict):
+        return []
+    posts = payload.get("posts")
+    order = payload.get("order")
+    if not isinstance(posts, dict) or not isinstance(order, list):
+        return []
+    result: list[dict[str, object]] = []
+    for post_id in order[-limit:]:
+        post = posts.get(post_id)
+        if isinstance(post, dict):
+            result.append(post)
+    return result
+
+
 def cmd_mattermost_init(args: argparse.Namespace) -> int:
     ensure_env_file(args.env_file)
     cfg = load_mattermost_config(args.env_file)
@@ -2836,6 +2996,137 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
     print_kv("post", root_post_id)
     print_kv("replied", ", ".join(sorted(seen_usernames)))
     return 0
+
+
+def cmd_mattermost_lounge_enable(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    mm_cfg = load_mattermost_config(args.env_file)
+    if not podman_available():
+        print("[fail] podman is not installed or not on PATH", file=sys.stderr)
+        return 1
+    if not container_running(mm_cfg.container_name):
+        raise SystemExit("Mattermost container is not running. Launch it first.")
+
+    mattermost_lounge_root(args.env_file).mkdir(parents=True, exist_ok=True)
+    for instance_id in instance_ids:
+        instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
+        ensure_scaled_instance_running(instance)
+        ensure_mattermost_lounge_agent(instance)
+        job = add_mattermost_lounge_job(instance, interval_minutes=args.interval_minutes, timeout_seconds=args.timeout)
+        print(f"[ok] enabled Mattermost lounge for instance {instance_id}")
+        print_kv("job id", str(job.get("id")))
+        print_kv("job name", str(job.get("name")))
+        schedule = job.get("schedule") if isinstance(job, dict) else {}
+        if isinstance(schedule, dict):
+            print_kv("schedule", json.dumps(schedule, ensure_ascii=False))
+    print_kv("state file", str(mattermost_lounge_state_path(args.env_file)))
+    return 0
+
+
+def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    mm_cfg = load_mattermost_config(args.env_file)
+    overall = 0
+    for instance_id in instance_ids:
+        instance = scaled_instance(args.env_file, instance_id)
+        running = container_running(instance.container_name)
+        marker = "[ok]" if running else "[warn]"
+        print(f"{marker} instance {instance_id}: pod={instance.pod_name} container={instance.container_name} running={running}")
+        if not running:
+            overall = 1
+            continue
+        job = mattermost_lounge_job(instance)
+        if job is None:
+            print("  mattermost lounge: missing")
+            overall = 1
+            continue
+        print(f"  mattermost lounge: {job.get('name')} enabled={job.get('enabled')}")
+        state = job.get("state")
+        if isinstance(state, dict):
+            print(f"  nextRunAtMs: {state.get('nextRunAtMs')}")
+        schedule = job.get("schedule")
+        if isinstance(schedule, dict):
+            print(f"  schedule: {json.dumps(schedule, ensure_ascii=False)}")
+
+    lounge_state = load_mattermost_lounge_state(args.env_file)
+    print_kv("state file", str(mattermost_lounge_state_path(args.env_file)))
+    root_post_id = str(lounge_state.get("root_post_id", "")) if lounge_state else ""
+    if not root_post_id:
+        print("  root post: missing")
+        return 1 if overall == 0 else overall
+
+    print_kv("root post", root_post_id)
+    print_kv("thread url", mattermost_thread_url(mm_cfg, root_post_id))
+    try:
+        token = mattermost_login(
+            mm_cfg,
+            mm_cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"],
+            mattermost_state_values(args.env_file)[MATTERMOST_OPERATOR_PASSWORD_KEY],
+        )
+        for post in recent_mattermost_thread_messages(mm_cfg, token, root_post_id):
+            user_id = str(post.get("user_id", ""))
+            speaker = user_id
+            for instance_id in instance_ids:
+                username = mattermost_persona_username(instance_id)
+                resolved_user_id = mattermost_user_id(mm_cfg, username, token)
+                if user_id == resolved_user_id:
+                    speaker = username
+                    break
+            message = str(post.get("message", "")).replace("\n", " ").strip()
+            print(f"  {speaker}: {message[:120]}")
+    except Exception as exc:
+        print(f"  recent thread fetch failed: {exc}")
+        overall = 1
+    return overall
+
+
+def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    for instance_id in instance_ids:
+        instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
+        ensure_scaled_instance_running(instance)
+        output = run_mattermost_lounge_turn_now(instance, timeout_seconds=max(30, args.timeout_ms // 1000))
+        print(f"[ok] Mattermost lounge turn instance {instance_id}: {output}")
+
+    if args.wait_seconds > 0:
+        time.sleep(args.wait_seconds)
+
+    lounge_state = load_mattermost_lounge_state(args.env_file)
+    root_post_id = str(lounge_state.get("root_post_id", "")) if lounge_state else ""
+    if root_post_id:
+        print_kv("root post", root_post_id)
+        print_kv("thread url", mattermost_thread_url(load_mattermost_config(args.env_file), root_post_id))
+    return 0
+
+
+def cmd_mattermost_lounge_disable(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    removed_any = False
+    for instance_id in instance_ids:
+        instance = scaled_instance(args.env_file, instance_id)
+        if not container_running(instance.container_name):
+            print(f"[warn] instance {instance_id} is not running; skipping Mattermost lounge cron removal")
+            continue
+        removed = remove_mattermost_lounge_job(instance)
+        removed_any = removed_any or removed
+        print(f"[ok] Mattermost lounge remove instance {instance_id}: removed={removed}")
+    return 0 if removed_any else 1
 
 
 def print_kv(title: str, value: str) -> None:
@@ -3487,6 +3778,29 @@ def build_parser() -> argparse.ArgumentParser:
     mattermost_smoke_parser.add_argument("--count", type=int, default=3, help="Number of triad bots expected to reply (default: 3).")
     mattermost_smoke_parser.add_argument("--timeout", type=int, default=120, help="Wait this many seconds for replies (default: 120).")
     mattermost_smoke_parser.set_defaults(func=cmd_mattermost_smoke)
+
+    mattermost_lounge_parser = mattermost_subparsers.add_parser("lounge", help="Manage autonomous lounge posting in the triad Mattermost channel.")
+    mattermost_lounge_subparsers = mattermost_lounge_parser.add_subparsers(dest="mattermost_lounge_command", required=True)
+
+    mattermost_lounge_enable_parser = mattermost_lounge_subparsers.add_parser("enable", help="Create or replace pod-local cron jobs for the Mattermost lounge.")
+    mattermost_lounge_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (must be 3; default: 3).")
+    mattermost_lounge_enable_parser.add_argument("--interval-minutes", type=int, default=2, help="Minute gap between speakers; full cycle is gap*3 (default: 2).")
+    mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=180, help="Per-turn timeout seconds (default: 180).")
+    mattermost_lounge_enable_parser.set_defaults(func=cmd_mattermost_lounge_enable)
+
+    mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show pod-local Mattermost lounge cron status.")
+    mattermost_lounge_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (must be 3; default: 3).")
+    mattermost_lounge_status_parser.set_defaults(func=cmd_mattermost_lounge_status)
+
+    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Enqueue one immediate Mattermost lounge turn for each pod-local job.")
+    mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (must be 3; default: 3).")
+    mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=180000, help="Cron run request timeout in ms (default: 180000).")
+    mattermost_lounge_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before printing the thread info (default: 10).")
+    mattermost_lounge_run_now_parser.set_defaults(func=cmd_mattermost_lounge_run_now)
+
+    mattermost_lounge_disable_parser = mattermost_lounge_subparsers.add_parser("disable", help="Remove pod-local Mattermost lounge cron jobs.")
+    mattermost_lounge_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
+    mattermost_lounge_disable_parser.set_defaults(func=cmd_mattermost_lounge_disable)
 
     boardview_parser = subparsers.add_parser("boardview", help="Build a human-readable shared-board HTML viewer.")
     boardview_parser.add_argument("--thread", help="Optional thread id to print/open directly.")
