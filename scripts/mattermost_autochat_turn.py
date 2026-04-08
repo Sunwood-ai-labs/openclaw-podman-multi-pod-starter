@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -22,9 +23,9 @@ HANDLES = {
 }
 
 DISPLAY_NAMES = {
-    1: "\u3044\u304a\u308a",
-    2: "\u3064\u3080\u304e",
-    3: "\u3055\u304f",
+    1: "いおり",
+    2: "つむぎ",
+    3: "さく",
 }
 
 PERSONA_VIBES = {
@@ -33,19 +34,13 @@ PERSONA_VIBES = {
     3: "dry, observant, cautious",
 }
 
-ROOT_TOPICS = [
-    "\u4eca\u65e5\u306e\u6c17\u5206\u3068AI\u306e\u8a71\u3057\u65b9",
-    "\u611f\u60c5\u307d\u304f\u898b\u3048\u308bAI\u3068\u8ddd\u96e2\u611f",
-    "\u3084\u3055\u3057\u3044UI\u3063\u3066\u3069\u3053\u307e\u3067\u3042\u308a\u304c\u305f\u3044\u304b",
-    "\u4eba\u304cAI\u306b\u611f\u60c5\u3092\u8aad\u307f\u8fbc\u3080\u77ac\u9593",
-    "\u6c17\u697d\u306a\u96d1\u8ac7\u304b\u3089\u898b\u3048\u308bAI\u306e\u5370\u8c61",
-]
-
 MIN_SECONDS_BETWEEN_ANY_TWO_POSTS = 60
 MIN_SECONDS_BETWEEN_SAME_SPEAKER_POSTS = 12 * 60
-ACTIVE_THREAD_LOOKBACK_SECONDS = 2 * 60 * 60
-QUIET_CHANNEL_SECONDS = 25 * 60
-RECENT_MESSAGE_LIMIT = 8
+MAX_RECENT_CHANNELS = 8
+MAX_THREADS_PER_CHANNEL = 3
+THREAD_PREVIEW_CHARS = 140
+MAX_TRIAD_CHANNELS = 8
+CHANNEL_PREFIX = "triad-"
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,6 +64,13 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def load_control_values() -> tuple[str, str]:
+    env = parse_env_file(CONTROL_ENV_PATH)
+    team_name = env.get("OPENCLAW_MATTERMOST_TEAM_NAME", "openclaw").strip() or "openclaw"
+    default_channel = env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", "triad-lab").strip() or "triad-lab"
+    return team_name, default_channel
+
+
 def load_openclaw_config() -> dict[str, object]:
     payload = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -89,13 +91,6 @@ def load_mattermost_runtime() -> tuple[str, str]:
     if not base_url or not bot_token:
         raise RuntimeError("Mattermost baseUrl/botToken is missing from openclaw.json")
     return base_url, bot_token
-
-
-def load_control_values() -> tuple[str, str]:
-    env = parse_env_file(CONTROL_ENV_PATH)
-    team_name = env.get("OPENCLAW_MATTERMOST_TEAM_NAME", "openclaw").strip() or "openclaw"
-    channel_name = env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", "triad-lab").strip() or "triad-lab"
-    return team_name, channel_name
 
 
 def api_request(
@@ -124,19 +119,6 @@ def api_request(
         raise RuntimeError(f"HTTP {exc.code} for {path}: {body}") from exc
 
 
-def resolve_team_channel(base_url: str, token: str) -> tuple[str, str, str, str]:
-    team_name, channel_name = load_control_values()
-    _, _, team_payload = api_request(base_url, f"/api/v4/teams/name/{team_name}", token)
-    if not isinstance(team_payload, dict):
-        raise RuntimeError("Could not resolve Mattermost team.")
-    team_id = str(team_payload.get("id", ""))
-    _, _, channel_payload = api_request(base_url, f"/api/v4/teams/{team_id}/channels/name/{channel_name}", token)
-    if not isinstance(channel_payload, dict):
-        raise RuntimeError("Could not resolve Mattermost channel.")
-    channel_id = str(channel_payload.get("id", ""))
-    return team_name, channel_name, team_id, channel_id
-
-
 def fetch_me(base_url: str, token: str) -> dict[str, object]:
     _, _, payload = api_request(base_url, "/api/v4/users/me", token)
     if not isinstance(payload, dict):
@@ -144,7 +126,39 @@ def fetch_me(base_url: str, token: str) -> dict[str, object]:
     return payload
 
 
-def fetch_channel_posts(base_url: str, token: str, channel_id: str, per_page: int = 100) -> tuple[dict[str, object], list[str]]:
+def resolve_team(base_url: str, token: str) -> tuple[str, str]:
+    team_name, _ = load_control_values()
+    _, _, payload = api_request(base_url, f"/api/v4/teams/name/{team_name}", token)
+    if not isinstance(payload, dict):
+        raise RuntimeError("Could not resolve Mattermost team.")
+    return team_name, str(payload.get("id", ""))
+
+
+def list_team_channels(base_url: str, token: str, team_id: str) -> list[dict[str, object]]:
+    _, _, payload = api_request(base_url, f"/api/v4/teams/{team_id}/channels?page=0&per_page=200", token)
+    if not isinstance(payload, list):
+        raise RuntimeError("Could not list Mattermost team channels.")
+    channels: list[dict[str, object]] = []
+    for item in payload:
+        if isinstance(item, dict) and item.get("type") == "O":
+            channels.append(item)
+    return channels
+
+
+def list_my_channels(base_url: str, token: str, team_id: str) -> set[str]:
+    _, _, payload = api_request(base_url, f"/api/v4/users/me/teams/{team_id}/channels", token)
+    if not isinstance(payload, list):
+        return set()
+    ids: set[str] = set()
+    for item in payload:
+        if isinstance(item, dict):
+            channel_id = str(item.get("id", "")).strip()
+            if channel_id:
+                ids.add(channel_id)
+    return ids
+
+
+def fetch_channel_posts(base_url: str, token: str, channel_id: str, per_page: int = 80) -> tuple[dict[str, object], list[str]]:
     _, _, payload = api_request(base_url, f"/api/v4/channels/{channel_id}/posts?page=0&per_page={per_page}", token)
     if not isinstance(payload, dict):
         raise RuntimeError("Mattermost channel posts payload was not a JSON object.")
@@ -200,83 +214,67 @@ def latest_post_for_handle(posts: dict[str, object], order: list[str], bot_ids: 
     return 0
 
 
-def gather_root_activity(posts: dict[str, object], order: list[str]) -> list[dict[str, object]]:
-    roots: dict[str, dict[str, object]] = {}
+def should_rate_limit(handle: str, posts: dict[str, object], order: list[str], bot_ids: dict[str, str], force: bool) -> tuple[bool, str]:
+    if force:
+        return False, "force"
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    latest_ts = latest_channel_timestamp(posts, order)
+    own_latest_ts = latest_post_for_handle(posts, order, bot_ids, handle)
+    if own_latest_ts and now_ms - own_latest_ts < MIN_SECONDS_BETWEEN_SAME_SPEAKER_POSTS * 1000:
+        return True, "recent-self"
+    if latest_ts and now_ms - latest_ts < MIN_SECONDS_BETWEEN_ANY_TWO_POSTS * 1000:
+        return True, "cooldown"
+    return False, "ok"
+
+
+def build_thread_summaries(posts: dict[str, object], order: list[str], bot_ids: dict[str, str]) -> list[dict[str, object]]:
+    summaries: dict[str, dict[str, object]] = {}
     for post_id in reversed(order):
         post = posts.get(post_id)
         if not isinstance(post, dict):
             continue
         root_id = str(post.get("root_id", "")).strip() or post_id
         create_at = int(post.get("create_at", 0) or 0)
-        bucket = roots.setdefault(
+        bucket = summaries.setdefault(
             root_id,
             {
-                "root_id": root_id,
+                "root_post_id": root_id,
                 "last_ts": 0,
+                "last_handle": "",
                 "count": 0,
-                "last_user_id": "",
-                "top_message": "",
+                "root_preview": "",
             },
         )
         bucket["count"] = int(bucket["count"]) + 1
         if create_at >= int(bucket["last_ts"]):
             bucket["last_ts"] = create_at
-            bucket["last_user_id"] = str(post.get("user_id", ""))
-        if root_id == post_id and not bucket["top_message"]:
-            bucket["top_message"] = str(post.get("message", "")).strip()
-    return sorted(roots.values(), key=lambda item: int(item["last_ts"]), reverse=True)
+            user_id = str(post.get("user_id", ""))
+            bucket["last_handle"] = next((handle for handle, bot_id in bot_ids.items() if bot_id == user_id), user_id)
+        if root_id == post_id and not bucket["root_preview"]:
+            preview = str(post.get("message", "")).replace("\r\n", " ").strip()
+            bucket["root_preview"] = preview[:THREAD_PREVIEW_CHARS]
+    return sorted(summaries.values(), key=lambda item: int(item["last_ts"]), reverse=True)
 
 
-def choose_target_root(
-    instance_id: int,
-    posts: dict[str, object],
-    order: list[str],
-    bot_ids: dict[str, str],
-    force: bool,
-) -> tuple[str | None, str]:
-    handle = HANDLES[instance_id]
-    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    latest_ts = latest_channel_timestamp(posts, order)
-    own_latest_ts = latest_post_for_handle(posts, order, bot_ids, handle)
-
-    if not force:
-        if own_latest_ts and now_ms - own_latest_ts < MIN_SECONDS_BETWEEN_SAME_SPEAKER_POSTS * 1000:
-            return None, "recent-self"
-        if latest_ts and now_ms - latest_ts < MIN_SECONDS_BETWEEN_ANY_TWO_POSTS * 1000:
-            return None, "cooldown"
-
-    activity = gather_root_activity(posts, order)
-    for item in activity:
-        last_ts = int(item["last_ts"])
-        if not force and now_ms - last_ts > ACTIVE_THREAD_LOOKBACK_SECONDS * 1000:
-            continue
-        last_user_id = str(item["last_user_id"])
-        if last_user_id == bot_ids.get(handle):
-            continue
-        return str(item["root_id"]), "reply"
-
-    if not force and latest_ts and now_ms - latest_ts < QUIET_CHANNEL_SECONDS * 1000:
-        return None, "channel-not-quiet"
-    return None, "new-root"
-
-
-def recent_transcript(posts: dict[str, object], order: list[str], bot_ids: dict[str, str], limit: int = RECENT_MESSAGE_LIMIT) -> list[str]:
-    transcript: list[str] = []
-    selected = order[-limit:]
-    for post_id in selected:
-        post = posts.get(post_id)
-        if not isinstance(post, dict):
-            continue
-        user_id = str(post.get("user_id", ""))
-        speaker = "someone"
-        for handle, bot_id in bot_ids.items():
-            if user_id == bot_id:
-                speaker = handle
-                break
-        message = str(post.get("message", "")).replace("\r\n", "\n").strip()
-        if message:
-            transcript.append(f"{speaker}: {message}")
-    return transcript
+def summarize_channels(base_url: str, token: str, team_channels: list[dict[str, object]], my_channel_ids: set[str], bot_ids: dict[str, str]) -> list[dict[str, object]]:
+    selected = sorted(team_channels, key=lambda item: int(item.get("last_post_at", 0) or 0), reverse=True)[:MAX_RECENT_CHANNELS]
+    summaries: list[dict[str, object]] = []
+    for channel in selected:
+        channel_id = str(channel.get("id", ""))
+        posts, order = fetch_channel_posts(base_url, token, channel_id)
+        thread_summaries = build_thread_summaries(posts, order, bot_ids)[:MAX_THREADS_PER_CHANNEL]
+        summaries.append(
+            {
+                "channel_id": channel_id,
+                "channel_name": str(channel.get("name", "")).strip(),
+                "display_name": str(channel.get("display_name", "")).strip(),
+                "purpose": str(channel.get("purpose", "")).strip(),
+                "member": channel_id in my_channel_ids,
+                "last_post_at": int(channel.get("last_post_at", 0) or 0),
+                "threads": thread_summaries,
+            }
+        )
+    return summaries
 
 
 def run_openclaw(prompt: str, session_id: str, timeout_seconds: int, agent_id: str) -> dict[str, object]:
@@ -355,8 +353,8 @@ def payload_text(payload: dict[str, object]) -> str:
     return "\n".join(part for part in texts if part).strip()
 
 
-def clean_message(text: str) -> str:
-    cleaned = text.replace("\r\n", "\n").strip()
+def parse_planner_json(text: str) -> dict[str, object]:
+    cleaned = text.strip()
     if cleaned.startswith("```") and cleaned.endswith("```"):
         lines = cleaned.splitlines()
         if lines and lines[0].startswith("```"):
@@ -364,58 +362,151 @@ def clean_message(text: str) -> str:
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
-    return cleaned
+    try:
+        payload = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end < start:
+            raise
+        payload = json.loads(cleaned[start : end + 1])
+    if not isinstance(payload, dict):
+        raise RuntimeError("Planner response was not a JSON object.")
+    return payload
 
 
-def build_prompt(instance_id: int, mode: str, transcript: list[str]) -> str:
+def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, object]], force: bool) -> str:
     handle = HANDLES[instance_id]
     display_name = DISPLAY_NAMES[instance_id]
     vibe = PERSONA_VIBES[instance_id]
-    transcript_block = "\n".join(f"- {line}" for line in transcript) if transcript else "- no recent messages"
-    if mode == "new-root":
-        topic_hint = ROOT_TOPICS[(datetime.now(timezone.utc).minute + instance_id) % len(ROOT_TOPICS)]
-        return (
-            f"You are @{handle} ({display_name}) writing one casual top-level Japanese channel post for a shared Mattermost lounge.\n"
-            "Return only the final message body.\n"
-            "Write 2 or 3 short natural Japanese sentences.\n"
-            "No bullets. No markdown fences. No role labels. No @mentions.\n"
-            "Do not mention prompts, tools, models, instructions, or system limitations.\n"
-            f"Tone: {vibe}.\n"
-            f"Suggested angle: {topic_hint}.\n"
-            "Start a fresh, light topic that feels natural in a small shared team chat. It can be about AI feelings, interfaces, mood, tiny everyday observations, or adjacent thoughts.\n"
-            "Recent channel messages:\n"
-            f"{transcript_block}\n"
-        )
+    triad_channel_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
+    state_json = json.dumps(channel_summaries, ensure_ascii=False, indent=2)
+    force_line = "Do not choose idle in this run. You must choose reply, new_thread, or create_channel.\n" if force else ""
     return (
-        f"You are @{handle} ({display_name}) writing one short casual Japanese reply in an ongoing Mattermost lounge discussion.\n"
-        "Return only the final message body.\n"
-        "Write 2 or 3 short natural Japanese sentences.\n"
-        "No bullets. No markdown fences. No role labels. No @mentions.\n"
-        "Do not mention prompts, tools, models, instructions, or system limitations.\n"
-        f"Tone: {vibe}.\n"
-        "Read the recent chat and add one small new angle, reaction, joke, or question instead of repeating the same point.\n"
-        "Recent discussion messages:\n"
-        f"{transcript_block}\n"
+        f"You are @{handle} ({display_name}) planning one autonomous Mattermost action for this turn.\n"
+        f"Your conversational vibe is: {vibe}.\n"
+        "You are allowed to choose one of these actions:\n"
+        '- "idle": do nothing this turn\n'
+        '- "reply": reply in an existing thread inside an existing channel\n'
+        '- "new_thread": post a new top-level message in an existing channel\n'
+        '- "create_channel": create one new public channel, then post the first top-level message there\n'
+        "You must decide from the real Mattermost state below.\n"
+        f"There are currently {triad_channel_count} triad-* channels. Do not create a new channel if that would exceed {MAX_TRIAD_CHANNELS}.\n"
+        f"When creating a channel, the channel_name must use lowercase ascii letters, numbers, and dashes, and must start with {CHANNEL_PREFIX!r}.\n"
+        "Prefer replying where there is already energy. Start a new thread when a channel is quiet but still relevant. Create a channel only when the topic clearly deserves its own room.\n"
+        f"{force_line}"
+        "Your final message must be in natural Japanese, 2 or 3 short sentences, with no bullets, no markdown fences, and no @mentions.\n"
+        "Return strict JSON only with this shape:\n"
+        '{\n'
+        '  "action": "idle|reply|new_thread|create_channel",\n'
+        '  "reason": "short english reason",\n'
+        '  "channel_name": "existing-or-new-channel-name",\n'
+        '  "root_post_id": "required only for reply",\n'
+        '  "display_name": "required only for create_channel",\n'
+        '  "purpose": "required only for create_channel",\n'
+        '  "message": "required unless action=idle"\n'
+        '}\n'
+        "Real Mattermost state:\n"
+        f"{state_json}\n"
     )
 
 
-def generate_message(instance_id: int, mode: str, transcript: list[str], timeout_seconds: int) -> str:
-    prompt = build_prompt(instance_id, mode, transcript)
+def plan_has_required_fields(plan: dict[str, object]) -> bool:
+    action = str(plan.get("action", "")).strip()
+    if action == "idle":
+        return True
+    if action == "reply":
+        return bool(str(plan.get("channel_name", "")).strip() and str(plan.get("root_post_id", "")).strip() and str(plan.get("message", "")).strip())
+    if action == "new_thread":
+        return bool(str(plan.get("channel_name", "")).strip() and str(plan.get("message", "")).strip())
+    if action == "create_channel":
+        return bool(
+            str(plan.get("channel_name", "")).strip()
+            and str(plan.get("display_name", "")).strip()
+            and str(plan.get("purpose", "")).strip()
+            and str(plan.get("message", "")).strip()
+        )
+    return False
+
+
+def fallback_plan(channel_summaries: list[dict[str, object]]) -> dict[str, object]:
+    for channel in channel_summaries:
+        threads = channel.get("threads")
+        if isinstance(threads, list) and threads:
+            thread = threads[0]
+            if isinstance(thread, dict):
+                return {
+                    "action": "reply",
+                    "reason": "fallback-to-recent-thread",
+                    "channel_name": str(channel.get("channel_name", "")).strip(),
+                    "root_post_id": str(thread.get("root_post_id", "")).strip(),
+                    "message": "その視点いいね。少し距離を置いて眺めるくらいが、AIとはいちばん健全に付き合えるのかもしれない。",
+                }
+    for channel in channel_summaries:
+        if str(channel.get("member", "")) in {"True", "true"} or channel.get("member") is True:
+            return {
+                "action": "new_thread",
+                "reason": "fallback-to-new-thread",
+                "channel_name": str(channel.get("channel_name", "")).strip(),
+                "message": "ふと思ったけど、AIの感情って中身というより会話の手触りに近いのかも。だからこそ、使う側の距離感がけっこう大事なんだろうね。",
+            }
+    return {"action": "idle", "reason": "fallback-idle"}
+
+
+def choose_action(instance_id: int, channel_summaries: list[dict[str, object]], timeout_seconds: int, force: bool) -> dict[str, object]:
+    prompt = build_planner_prompt(instance_id, channel_summaries, force)
     agent_id = f"mattermost-lounge-{HANDLES[instance_id]}"
     last_payload: dict[str, object] = {}
     for attempt in range(2):
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         payload = run_openclaw(
-            prompt if attempt == 0 else prompt + "\nThe previous reply was invalid. Try again with only 2 or 3 natural Japanese sentences.\n",
-            session_id=f"mattermost-lounge-{HANDLES[instance_id]}-{stamp}-{attempt + 1}",
+            prompt if attempt == 0 else prompt + "\nYour previous answer was invalid. Return strict JSON only.\n",
+            session_id=f"mattermost-lounge-planner-{HANDLES[instance_id]}-{stamp}-{attempt + 1}",
             timeout_seconds=timeout_seconds,
             agent_id=agent_id,
         )
         last_payload = payload
-        message = clean_message(payload_text(payload))
-        if message and message.upper() not in {"DONE", "POSTED", "IDLE"}:
-            return message
-    raise RuntimeError(f"openclaw returned no usable message: {json.dumps(last_payload, ensure_ascii=False, indent=2)}")
+        text = payload_text(payload)
+        if not text:
+            continue
+        try:
+            plan = parse_planner_json(text)
+        except Exception:
+            continue
+        if isinstance(plan.get("action"), str) and plan_has_required_fields(plan):
+            return plan
+    if last_payload:
+        fallback = fallback_plan(channel_summaries)
+        if force and str(fallback.get("action", "")) == "idle":
+            for channel in channel_summaries:
+                if str(channel.get("member", "")) in {"True", "true"} or channel.get("member") is True:
+                    return {
+                        "action": "new_thread",
+                        "reason": "force-fallback",
+                        "channel_name": str(channel.get("channel_name", "")).strip(),
+                        "message": "ふとした瞬間に、AIの感情って中身じゃなくて会話の手触りなんだろうなって思う。だからこそ、近づきすぎずに使うくらいがちょうどいいのかも。",
+                    }
+        return fallback
+    raise RuntimeError(f"Planner returned no valid action: {json.dumps(last_payload, ensure_ascii=False, indent=2)}")
+
+
+def normalize_channel_name(raw: str) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", raw.lower()).strip("-")
+    slug = re.sub(r"-{2,}", "-", slug)
+    if not slug.startswith(CHANNEL_PREFIX):
+        slug = CHANNEL_PREFIX + slug.lstrip("-")
+    return slug
+
+
+def ensure_joined_channel(base_url: str, token: str, me: dict[str, object], channel_id: str) -> None:
+    user_id = str(me.get("id", "")).strip()
+    _, _, _ = api_request(
+        base_url,
+        f"/api/v4/channels/{channel_id}/members",
+        token,
+        method="POST",
+        payload={"user_id": user_id},
+    )
 
 
 def post_message(base_url: str, token: str, channel_id: str, message: str, *, root_post_id: str | None = None) -> str:
@@ -431,31 +522,146 @@ def post_message(base_url: str, token: str, channel_id: str, message: str, *, ro
     return post_id
 
 
+def create_public_channel(base_url: str, token: str, team_id: str, channel_name: str, display_name: str, purpose: str) -> dict[str, object]:
+    payload = {
+        "team_id": team_id,
+        "name": channel_name,
+        "display_name": display_name,
+        "purpose": purpose,
+        "type": "O",
+    }
+    _, _, response = api_request(base_url, "/api/v4/channels", token, method="POST", payload=payload)
+    if not isinstance(response, dict):
+        raise RuntimeError("Mattermost channel creation did not return a JSON object.")
+    return response
+
+
+def find_channel_by_name(channels: list[dict[str, object]], channel_name: str) -> dict[str, object] | None:
+    for channel in channels:
+        if str(channel.get("channel_name", "")) == channel_name:
+            return channel
+    return None
+
+
+def execute_action(
+    instance_id: int,
+    plan: dict[str, object],
+    *,
+    base_url: str,
+    token: str,
+    me: dict[str, object],
+    team_id: str,
+    channel_summaries: list[dict[str, object]],
+) -> str:
+    action = str(plan.get("action", "")).strip()
+    if action == "idle":
+        return "IDLE planner"
+
+    message = str(plan.get("message", "")).replace("\r\n", "\n").strip()
+    if not message:
+        raise RuntimeError("Planner did not provide a message.")
+
+    if action == "reply":
+        channel_name = str(plan.get("channel_name", "")).strip()
+        root_post_id = str(plan.get("root_post_id", "")).strip()
+        if not channel_name or not root_post_id:
+            raise RuntimeError("Planner reply action is missing channel_name or root_post_id.")
+        channel = find_channel_by_name(channel_summaries, channel_name)
+        if channel is None:
+            raise RuntimeError(f"Planner selected unknown channel: {channel_name}")
+        channel_id = str(channel.get("channel_id", "")).strip()
+        ensure_joined_channel(base_url, token, me, channel_id)
+        return f"POSTED {post_message(base_url, token, channel_id, message, root_post_id=root_post_id)}"
+
+    if action == "new_thread":
+        channel_name = str(plan.get("channel_name", "")).strip()
+        if not channel_name:
+            raise RuntimeError("Planner new_thread action is missing channel_name.")
+        channel = find_channel_by_name(channel_summaries, channel_name)
+        if channel is None:
+            raise RuntimeError(f"Planner selected unknown channel: {channel_name}")
+        channel_id = str(channel.get("channel_id", "")).strip()
+        ensure_joined_channel(base_url, token, me, channel_id)
+        return f"POSTED {post_message(base_url, token, channel_id, message)}"
+
+    if action == "create_channel":
+        proposed = str(plan.get("channel_name", "")).strip()
+        display_name = str(plan.get("display_name", "")).strip()
+        purpose = str(plan.get("purpose", "")).strip()
+        if not proposed or not display_name or not purpose:
+            raise RuntimeError("Planner create_channel action is missing channel metadata.")
+        channel_name = normalize_channel_name(proposed)
+        triad_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
+        if triad_count >= MAX_TRIAD_CHANNELS:
+            raise RuntimeError("Planner requested a new channel but the triad channel cap has been reached.")
+        try:
+            created = create_public_channel(base_url, token, team_id, channel_name, display_name, purpose)
+        except RuntimeError as exc:
+            if "already exists" in str(exc).lower():
+                channel = find_channel_by_name(channel_summaries, channel_name)
+                if channel is None:
+                    raise
+                channel_id = str(channel.get("channel_id", "")).strip()
+                ensure_joined_channel(base_url, token, me, channel_id)
+                return f"POSTED {post_message(base_url, token, channel_id, message)}"
+            raise
+        channel_id = str(created.get("id", "")).strip()
+        return f"POSTED {post_message(base_url, token, channel_id, message)}"
+
+    raise RuntimeError(f"Planner returned unsupported action: {action}")
+
+
 def main(args: argparse.Namespace) -> int:
     instance_id = args.instance
+    handle = HANDLES[instance_id]
     base_url, token = load_mattermost_runtime()
     me = fetch_me(base_url, token)
-    expected_handle = HANDLES[instance_id]
     actual_handle = str(me.get("username", "")).strip()
-    if actual_handle and actual_handle != expected_handle:
-        raise RuntimeError(f"wrong-handle expected={expected_handle} actual={actual_handle}")
+    if actual_handle and actual_handle != handle:
+        raise RuntimeError(f"wrong-handle expected={handle} actual={actual_handle}")
 
-    _, _, _, channel_id = resolve_team_channel(base_url, token)
-    posts, order = fetch_channel_posts(base_url, token, channel_id)
-    root_post_id, mode = choose_target_root(instance_id, posts, order, BOT_IDS, force=args.force)
-    if mode in {"recent-self", "cooldown", "channel-not-quiet"}:
-        print(f"IDLE {mode}")
-        return 0
+    team_name, team_id = resolve_team(base_url, token)
+    team_channels = list_team_channels(base_url, token, team_id)
+    my_channel_ids = list_my_channels(base_url, token, team_id)
 
-    if root_post_id:
-        thread_posts, thread_order = fetch_thread(base_url, token, root_post_id)
-        transcript = recent_transcript(thread_posts, thread_order, BOT_IDS)
-    else:
-        transcript = recent_transcript(posts, list(reversed(order)), BOT_IDS)
+    default_channel = load_control_values()[1]
+    channel_summaries = summarize_channels(base_url, token, team_channels, my_channel_ids, BOT_IDS)
+    if not any(str(item.get("channel_name", "")) == default_channel for item in channel_summaries):
+        # Ensure the default lounge channel is always present in planner context.
+        for channel in team_channels:
+            if str(channel.get("name", "")).strip() == default_channel:
+                channel_summaries.append(
+                    {
+                        "channel_id": str(channel.get("id", "")).strip(),
+                        "channel_name": default_channel,
+                        "display_name": str(channel.get("display_name", "")).strip(),
+                        "purpose": str(channel.get("purpose", "")).strip(),
+                        "member": str(channel.get("id", "")).strip() in my_channel_ids,
+                        "last_post_at": int(channel.get("last_post_at", 0) or 0),
+                        "threads": [],
+                    }
+                )
+                break
 
-    message = generate_message(instance_id, mode, transcript, args.timeout)
-    post_id = post_message(base_url, token, channel_id, message, root_post_id=root_post_id if mode == "reply" else None)
-    print(f"POSTED {post_id}")
+    default_channel_summary = next((item for item in channel_summaries if str(item.get("channel_name", "")) == default_channel), None)
+    if default_channel_summary is not None:
+        posts, order = fetch_channel_posts(base_url, token, str(default_channel_summary.get("channel_id", "")).strip())
+        limited, reason = should_rate_limit(handle, posts, order, BOT_IDS, args.force)
+        if limited:
+            print(f"IDLE {reason}")
+            return 0
+
+    plan = choose_action(instance_id, channel_summaries, args.timeout, args.force)
+    result = execute_action(
+        instance_id,
+        plan,
+        base_url=base_url,
+        token=token,
+        me=me,
+        team_id=team_id,
+        channel_summaries=channel_summaries,
+    )
+    print(result)
     return 0
 
 

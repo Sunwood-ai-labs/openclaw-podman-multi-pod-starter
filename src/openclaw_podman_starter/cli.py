@@ -3815,7 +3815,7 @@ def build_parser() -> argparse.ArgumentParser:
     mattermost_lounge_enable_parser = mattermost_lounge_subparsers.add_parser("enable", help="Create or replace pod-local cron jobs for the Mattermost lounge.")
     mattermost_lounge_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (must be 3; default: 3).")
     mattermost_lounge_enable_parser.add_argument("--interval-minutes", type=int, default=2, help="Minute gap between speakers; full cycle is gap*3 (default: 2).")
-    mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=180, help="Per-turn timeout seconds (default: 180).")
+    mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=300, help="Per-turn timeout seconds (default: 300).")
     mattermost_lounge_enable_parser.set_defaults(func=cmd_mattermost_lounge_enable)
 
     mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show pod-local Mattermost lounge cron status.")
@@ -3824,7 +3824,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Enqueue one immediate Mattermost lounge turn for each pod-local job.")
     mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (must be 3; default: 3).")
-    mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=180000, help="Cron run request timeout in ms (default: 180000).")
+    mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=300000, help="Per-turn timeout in ms for direct run-now execution (default: 300000).")
     mattermost_lounge_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before printing the thread info (default: 10).")
     mattermost_lounge_run_now_parser.set_defaults(func=cmd_mattermost_lounge_run_now)
 
