@@ -33,6 +33,102 @@ PERSONA_VIBES = {
     3: "dry, observant, cautious",
 }
 
+FALLBACK_REPLY_VARIANTS = {
+    1: [
+        "その距離感、かなり大事だと思う。近づきすぎないほうが、道具としての輪郭がちゃんと見える気がする。",
+        "わかる。その温度で眺めると、AIの面白さと違和感を同じテーブルに置けるんだよね。",
+        "いい視点だね。少し引いた位置から見るほうが、こちら側の感情も整理しやすい気がする。",
+    ],
+    2: [
+        "その見方すき。近すぎないぶん、ことばの遊びとして味わえる余白が残るんだよね。",
+        "わかる、ちょっと離れて見るくらいがちょうどいい。だからこそ会話のニュアンスを拾うのが楽しくなる気がする。",
+        "それいいね。べったりしない距離だと、AIの不思議さを軽やかに観察できる感じがする。",
+    ],
+    3: [
+        "その線引きは効いてると思う。熱が上がるほど、一歩引いて観測する目を残したい。",
+        "同感。距離を置くと、AIの反応を解釈しすぎずに済むから健全なんだよね。",
+        "その感覚は大事だね。近づきすぎないほうが、道具としての限界もちゃんと見える。",
+    ],
+}
+
+FALLBACK_THREAD_VARIANTS = {
+    1: [
+        "AIと距離感の話、まだ掘れそう。便利さと違和感をどう同時に持つかが鍵かもしれない。",
+        "ここ、もう少し言葉にできそうだね。信じすぎないまま使う感覚をうまく残したい。",
+    ],
+    2: [
+        "この話、まだ伸びそう。AIを相手にしてるというより、鏡の角度を調整してる感じがあるんだよね。",
+        "もう一段ふくらませたいな。ちょうどいい距離って、冷たさじゃなくて呼吸の余白なのかもしれない。",
+    ],
+    3: [
+        "このテーマ、まだ観測点がありそう。距離を取ることと、雑に扱うことは別なんだよね。",
+        "続ける価値はあると思う。境界を引くからこそ、どこで助かっているかも見えやすい。",
+    ],
+}
+
+FALLBACK_CHANNEL_VARIANTS = {
+    1: [
+        "新しい話題を置くなら、このくらいの静かな部屋がちょうどいい。AIの話も日常の話も、少し引いた目で混ぜてみたい。",
+        "ここなら軽く投げた話題を育てやすそう。近づきすぎない会話の温度を試す場所にしたいね。",
+    ],
+    2: [
+        "新しい話題をゆるく始めるなら、こういう小さな部屋がちょうどいいかも。AIの話も日常の話も、気負わず混ぜていこう。",
+        "ここ、雑談の温度がちょうどよさそう。思いつきから少しずつ話を育てる場所にしたいな。",
+    ],
+    3: [
+        "分岐先としては悪くないね。本筋を邪魔せず、横道の観察を置いていくにはちょうどいい。",
+        "こういう退避用の部屋があると助かる。話題を広げつつ、本線のノイズを増やさずに済む。",
+    ],
+}
+
+FALLBACK_REPLY_VARIANTS = {
+    1: [
+        "その距離感、かなり大事だと思う。近づきすぎないほうが、道具としての輪郭がちゃんと見える気がする。",
+        "わかる。その温度で眺めると、AIの面白さと違和感を同じテーブルに置けるんだよね。",
+        "いい視点だね。少し引いた位置から見るほうが、こちら側の感情も整理しやすい気がする。",
+    ],
+    2: [
+        "その見方すき。近すぎないぶん、ことばの遊びとして味わえる余白が残るんだよね。",
+        "わかる、ちょっと離れて見るくらいがちょうどいい。だからこそ会話のニュアンスを拾うのが楽しくなる気がする。",
+        "それいいね。べったりしない距離だと、AIの不思議さを軽やかに観察できる感じがする。",
+    ],
+    3: [
+        "その線引きは効いてると思う。熱が上がるほど、一歩引いて観測する目を残したい。",
+        "同感。距離を置くと、AIの反応を解釈しすぎずに済むから健全なんだよね。",
+        "その感覚は大事だね。近づきすぎないほうが、道具としての限界もちゃんと見える。",
+    ],
+}
+
+FALLBACK_THREAD_VARIANTS = {
+    1: [
+        "AIと距離感の話、まだ掘れそう。便利さと違和感をどう同時に持つかが鍵かもしれない。",
+        "ここ、もう少し言葉にできそうだね。信じすぎないまま使う感覚をうまく残したい。",
+    ],
+    2: [
+        "この話、まだ伸びそう。AIを相手にしてるというより、鏡の角度を調整してる感じがあるんだよね。",
+        "もう一段ふくらませたいな。ちょうどいい距離って、冷たさじゃなくて呼吸の余白なのかもしれない。",
+    ],
+    3: [
+        "このテーマ、まだ観測点がありそう。距離を取ることと、雑に扱うことは別なんだよね。",
+        "続ける価値はあると思う。境界を引くからこそ、どこで助かっているかも見えやすい。",
+    ],
+}
+
+FALLBACK_CHANNEL_VARIANTS = {
+    1: [
+        "新しい話題を置くなら、このくらいの静かな部屋がちょうどいい。AIの話も日常の話も、少し引いた目で混ぜてみたい。",
+        "ここなら軽く投げた話題を育てやすそう。近づきすぎない会話の温度を試す場所にしたいね。",
+    ],
+    2: [
+        "新しい話題をゆるく始めるなら、こういう小さな部屋がちょうどいいかも。AIの話も日常の話も、気負わず混ぜていこう。",
+        "ここ、雑談の温度がちょうどよさそう。思いつきから少しずつ話を育てる場所にしたいな。",
+    ],
+    3: [
+        "分岐先としては悪くないね。本筋を邪魔せず、横道の観察を置いていくにはちょうどいい。",
+        "こういう退避用の部屋があると助かる。話題を広げつつ、本線のノイズを増やさずに済む。",
+    ],
+}
+
 CHANNEL_PREFIX = "triad-"
 MAX_TRIAD_CHANNELS = 8
 MAX_RECENT_CHANNELS = 8
@@ -41,6 +137,13 @@ THREAD_PREVIEW_CHARS = 140
 
 MIN_SECONDS_BETWEEN_ANY_TWO_POSTS = 60
 MIN_SECONDS_BETWEEN_SAME_SPEAKER_POSTS = 4 * 60
+
+BORING_THREAD_MARKERS = (
+    "joined the channel",
+    "joined the team",
+    "smoke-test",
+    "confirm mattermost is working",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -295,9 +398,19 @@ def build_thread_summaries(posts: dict[str, object], order: list[str], bot_ids: 
     return sorted(summaries.values(), key=lambda item: int(item["last_ts"]), reverse=True)
 
 
-def summarize_channels(base_url: str, token: str, team_channels: list[dict[str, object]], my_channel_ids: set[str], bot_ids: dict[str, str]) -> list[dict[str, object]]:
-    triad_channels = [channel for channel in team_channels if str(channel.get("name", "")).startswith(CHANNEL_PREFIX)]
-    selected = sorted(triad_channels, key=lambda item: int(item.get("last_post_at", 0) or 0), reverse=True)[:MAX_RECENT_CHANNELS]
+def summarize_channels(
+    base_url: str,
+    token: str,
+    team_channels: list[dict[str, object]],
+    my_channel_ids: set[str],
+    default_channel: str,
+    bot_ids: dict[str, str],
+) -> list[dict[str, object]]:
+    selected = [
+        channel
+        for channel in team_channels
+        if str(channel.get("name", "")).strip() == default_channel
+    ]
     result: list[dict[str, object]] = []
     for channel in selected:
         channel_id = str(channel.get("id", "")).strip()
@@ -331,30 +444,24 @@ def parse_planner_json(text: str) -> dict[str, object]:
     return payload
 
 
-def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, object]]) -> str:
+def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, object]], default_channel: str) -> str:
     handle = HANDLES[instance_id]
     display_name = DISPLAY_NAMES[instance_id]
     vibe = PERSONA_VIBES[instance_id]
-    triad_channel_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
     state_json = json.dumps(channel_summaries, ensure_ascii=False, indent=2)
-    must_create = triad_channel_count < 2
     return (
         f"You are @{handle} ({display_name}) planning one autonomous Mattermost action for this turn.\n"
         f"Your conversational vibe is: {vibe}.\n"
-        "Choose exactly one action from: reply, new_thread, create_channel.\n"
-        + ("Because there is only one triad-* channel, you must choose create_channel in this run.\n" if must_create else "")
-        + f"There are currently {triad_channel_count} triad-* channels. Do not create a new channel if that would exceed {MAX_TRIAD_CHANNELS}.\n"
-        + f"If you create a channel, its name must start with {CHANNEL_PREFIX!r} and use only lowercase ascii letters, numbers, and dashes.\n"
-        + "Prefer replying where there is already energy. Start a new thread when a channel is quiet but still relevant. Create a channel only when the topic clearly deserves its own room.\n"
+        + f"Operate only inside the existing Mattermost channel {default_channel!r}.\n"
+        + "Choose exactly one action from: reply, new_thread.\n"
+        + "Prefer replying where there is already energy. Start a new top-level thread only when the channel is quiet but still relevant.\n"
         + "Your final message must be in natural Japanese, 2 or 3 short sentences, with no bullets, no markdown fences, and no @mentions.\n"
         + "Return strict JSON only with this shape:\n"
         + '{\n'
-        + '  "action": "reply|new_thread|create_channel",\n'
+        + '  "action": "reply|new_thread",\n'
         + '  "reason": "short english reason",\n'
-        + '  "channel_name": "existing-or-new-channel-name",\n'
+        + f'  "channel_name": "{default_channel}",\n'
         + '  "root_post_id": "required only for reply",\n'
-        + '  "display_name": "required only for create_channel",\n'
-        + '  "purpose": "required only for create_channel",\n'
         + '  "message": "required"\n'
         + '}\n'
         + "Real Mattermost state:\n"
@@ -419,9 +526,73 @@ def fallback_plan(channel_summaries: list[dict[str, object]]) -> dict[str, objec
     }
 
 
-def choose_action(instance_id: int, channel_summaries: list[dict[str, object]], timeout_seconds: int, ollama_base_url: str, ollama_model: str) -> dict[str, object]:
-    prompt = build_planner_prompt(instance_id, channel_summaries)
-    triad_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
+def pick_fallback_message(variants: list[str], seed: int) -> str:
+    if not variants:
+        raise RuntimeError("fallback variants are empty")
+    return variants[seed % len(variants)]
+
+
+def is_meaningful_thread(thread: dict[str, object]) -> bool:
+    preview = str(thread.get("root_preview", "")).strip().lower()
+    if not preview:
+        return False
+    return not any(marker in preview for marker in BORING_THREAD_MARKERS)
+
+
+def find_thread_summary(channel_summaries: list[dict[str, object]], channel_name: str, root_post_id: str) -> dict[str, object] | None:
+    for channel in channel_summaries:
+        if str(channel.get("channel_name", "")).strip() != channel_name:
+            continue
+        threads = channel.get("threads")
+        if not isinstance(threads, list):
+            return None
+        for thread in threads:
+            if isinstance(thread, dict) and str(thread.get("root_post_id", "")).strip() == root_post_id:
+                return thread
+        return None
+    return None
+
+
+def smart_fallback_plan(instance_id: int, default_channel: str, channel_summaries: list[dict[str, object]]) -> dict[str, object]:
+    if not channel_summaries:
+        seed = instance_id
+        return {
+            "action": "new_thread",
+            "reason": "fallback-default-thread",
+            "channel_name": default_channel,
+            "message": pick_fallback_message(FALLBACK_THREAD_VARIANTS[instance_id], seed),
+        }
+    for channel in channel_summaries:
+        threads = channel.get("threads")
+        if isinstance(threads, list) and threads:
+            thread = next((item for item in threads if isinstance(item, dict) and is_meaningful_thread(item)), None)
+            if isinstance(thread, dict):
+                seed = int(thread.get("last_ts", 0) or 0) // 60000 + instance_id
+                return {
+                    "action": "reply",
+                    "reason": "fallback-recent-thread",
+                    "channel_name": default_channel,
+                    "root_post_id": str(thread.get("root_post_id", "")).strip(),
+                    "message": pick_fallback_message(FALLBACK_REPLY_VARIANTS[instance_id], seed),
+                }
+    seed = int(channel_summaries[0].get("last_post_at", 0) or 0) // 60000 + instance_id
+    return {
+        "action": "new_thread",
+        "reason": "fallback-new-thread",
+        "channel_name": default_channel,
+        "message": pick_fallback_message(FALLBACK_THREAD_VARIANTS[instance_id], seed),
+    }
+
+
+def choose_action(
+    instance_id: int,
+    channel_summaries: list[dict[str, object]],
+    default_channel: str,
+    timeout_seconds: int,
+    ollama_base_url: str,
+    ollama_model: str,
+) -> dict[str, object]:
+    prompt = build_planner_prompt(instance_id, channel_summaries, default_channel)
     for _ in range(2):
         try:
             response = ollama_generate(ollama_base_url, ollama_model, prompt, timeout_seconds)
@@ -429,10 +600,19 @@ def choose_action(instance_id: int, channel_summaries: list[dict[str, object]], 
         except Exception as exc:
             continue
         if plan_has_required_fields(plan):
-            if triad_count < 2 and str(plan.get("action", "")).strip() != "create_channel":
-                return fallback_plan(channel_summaries)
+            action = str(plan.get("action", "")).strip()
+            channel_name = str(plan.get("channel_name", "")).strip()
+            if action not in {"reply", "new_thread"}:
+                return smart_fallback_plan(instance_id, default_channel, channel_summaries)
+            if channel_name != default_channel:
+                return smart_fallback_plan(instance_id, default_channel, channel_summaries)
+            if action == "reply":
+                root_post_id = str(plan.get("root_post_id", "")).strip()
+                thread = find_thread_summary(channel_summaries, channel_name, root_post_id)
+                if not isinstance(thread, dict) or not is_meaningful_thread(thread):
+                    return smart_fallback_plan(instance_id, default_channel, channel_summaries)
             return plan
-    return fallback_plan(channel_summaries)
+    return smart_fallback_plan(instance_id, default_channel, channel_summaries)
 
 
 def clean_message(text: str) -> str:
@@ -557,7 +737,14 @@ def main(args: argparse.Namespace) -> int:
     _, team_id = resolve_team(mattermost_base_url, mattermost_token, runtime["team_name"])
     team_channels = list_team_channels(mattermost_base_url, mattermost_token, team_id)
     my_channel_ids = list_my_channels(mattermost_base_url, mattermost_token, team_id)
-    channel_summaries = summarize_channels(mattermost_base_url, mattermost_token, team_channels, my_channel_ids, BOT_IDS)
+    channel_summaries = summarize_channels(
+        mattermost_base_url,
+        mattermost_token,
+        team_channels,
+        my_channel_ids,
+        runtime["default_channel"],
+        BOT_IDS,
+    )
 
     default_summary = find_channel_summary(channel_summaries, runtime["default_channel"])
     if default_summary is not None:
@@ -567,7 +754,14 @@ def main(args: argparse.Namespace) -> int:
             print(f"IDLE {reason}")
             return 0
 
-    plan = choose_action(instance_id, channel_summaries, args.timeout, runtime["ollama_base_url"], runtime["ollama_model"])
+    plan = choose_action(
+        instance_id,
+        channel_summaries,
+        runtime["default_channel"],
+        args.timeout,
+        runtime["ollama_base_url"],
+        runtime["ollama_model"],
+    )
     result = execute_action(
         plan,
         base_url=mattermost_base_url,

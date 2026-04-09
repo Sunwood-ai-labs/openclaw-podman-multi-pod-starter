@@ -798,11 +798,11 @@ def autochat_seconds_offset(instance_id: int) -> int:
     return 5
 
 
-def autochat_cron_expression(instance_id: int, interval_minutes: int) -> str:
+def autochat_cron_expression(instance_id: int, interval_minutes: int, phase_offset: int = 0) -> str:
     if interval_minutes < 1 or interval_minutes > 19:
         raise SystemExit("--interval-minutes must be between 1 and 19.")
     cycle_minutes = interval_minutes * 3
-    minute_offset = (instance_id - 1) * interval_minutes
+    minute_offset = (((instance_id - 1) * interval_minutes) + phase_offset) % cycle_minutes
     return f"{autochat_seconds_offset(instance_id)} {minute_offset}-59/{cycle_minutes} * * * *"
 
 
@@ -1318,7 +1318,7 @@ def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_se
             "--name",
             autochat_job_name(instance.instance_id),
             "--agent",
-            "main",
+            autochat_agent_id(instance.instance_id),
             "--session",
             "isolated",
             "--cron",
@@ -1342,7 +1342,9 @@ def add_mattermost_lounge_job(instance: ScaledInstance, interval_minutes: int, t
         openclaw_cron_json(instance, ["rm", str(job.get("id"))])
 
     prompt = build_mattermost_lounge_turn_prompt(instance)
-    cron_expr = autochat_cron_expression(instance.instance_id, interval_minutes)
+    # Offset Mattermost lounge from shared-board autochat so one instance does
+    # not trigger two automation turns at the same minute.
+    cron_expr = autochat_cron_expression(instance.instance_id, interval_minutes, phase_offset=1)
     return openclaw_cron_json(
         instance,
         [
@@ -1350,7 +1352,7 @@ def add_mattermost_lounge_job(instance: ScaledInstance, interval_minutes: int, t
             "--name",
             mattermost_lounge_job_name(instance.instance_id),
             "--agent",
-            "main",
+            mattermost_lounge_agent_id(instance.instance_id),
             "--session",
             "isolated",
             "--cron",
