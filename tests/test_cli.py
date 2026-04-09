@@ -104,6 +104,38 @@ class CliTests(unittest.TestCase):
         self.assertEqual(cli.mattermost_lounge_job_name(1), "mattermost-lounge-autochat-001")
         self.assertEqual(cli.mattermost_lounge_agent_id(2), "mattermost-lounge-tsumugi")
 
+    def test_mattermost_lounge_prompt_mentions_action_scripts(self) -> None:
+        instance = cli.ScaledInstance(
+            instance_id=1,
+            pod_name="openclaw-1-pod",
+            container_name="openclaw-1",
+            config=cli.Config(
+                env_file=Path("D:/tmp/.env"),
+                container_name="openclaw-1",
+                image="image",
+                gateway_port=18789,
+                bridge_port=18790,
+                board_port=18889,
+                publish_host="127.0.0.1",
+                network="podman",
+                gateway_bind="lan",
+                userns="keep-id",
+                config_dir=Path("D:/tmp/instances/agent_001"),
+                workspace_dir=Path("D:/tmp/instances/agent_001/workspace"),
+                gateway_token="token",
+                ollama_base_url="http://127.0.0.1:11434",
+                ollama_model="gemma4:e2b",
+                board_image="python:3.11-slim",
+                raw_env={},
+            ),
+        )
+        prompt = cli.build_mattermost_lounge_turn_prompt(instance)
+        self.assertIn("mattermost_get_state.py", prompt)
+        self.assertIn("mattermost_post_message.py", prompt)
+        self.assertIn("mattermost_create_channel.py", prompt)
+        self.assertIn("mattermost_add_reaction.py", prompt)
+        self.assertIn("IDLE <reason>", prompt)
+
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
         self.assertEqual(thread_id, "gemma4-board-qa-smoke")
@@ -189,6 +221,10 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "templates" / "topic-template.md").exists())
             self.assertTrue((board_root / "tools" / "autochat_turn.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_autochat_turn.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_get_state.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())

@@ -24,6 +24,10 @@ DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
 AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "autochat_turn.py"
 MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
+MATTERMOST_GET_STATE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_get_state.py"
+MATTERMOST_POST_MESSAGE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_post_message.py"
+MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_create_channel.py"
+MATTERMOST_ADD_REACTION_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_add_reaction.py"
 BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
 BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
 BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
@@ -595,6 +599,10 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
     board_root = shared_board_root(instance)
     autochat_script = AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_get_state_script = MATTERMOST_GET_STATE_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_post_message_script = MATTERMOST_POST_MESSAGE_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_create_channel_script = MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_add_reaction_script = MATTERMOST_ADD_REACTION_SCRIPT_FILE.read_text(encoding="utf-8")
     render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
     board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
     board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
@@ -682,6 +690,10 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         board_root / "templates" / "summary-template.md": summary_template.strip() + "\n",
         board_root / "tools" / "autochat_turn.py": autochat_script if autochat_script.endswith("\n") else autochat_script + "\n",
         board_root / "tools" / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
+        board_root / "tools" / "mattermost_get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
+        board_root / "tools" / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
+        board_root / "tools" / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
+        board_root / "tools" / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
         board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
         board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
         board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
@@ -695,7 +707,17 @@ def scaffold_shared_board(instance: ScaledInstance) -> None:
 
     for path, content in render_shared_board_files(instance).items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.name in {"autochat_turn.py", "mattermost_autochat_turn.py", "render_board_view.py", "shared_board_service.py", "shared_board_app.html"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
+        if path.name in {
+            "autochat_turn.py",
+            "mattermost_autochat_turn.py",
+            "mattermost_get_state.py",
+            "mattermost_post_message.py",
+            "mattermost_create_channel.py",
+            "mattermost_add_reaction.py",
+            "render_board_view.py",
+            "shared_board_service.py",
+            "shared_board_app.html",
+        } or should_write_managed_file(path, BOARD_MANAGED_MARKER):
             path.write_text(content, encoding="utf-8")
 
 
@@ -1131,13 +1153,33 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
 
 
 def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
-    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py"
+    tools_dir = f"{CONTAINER_SHARED_BOARD_DIR}/tools"
     return dedent(
         f"""\
-        Use the exec tool to run exactly this command and nothing else:
-        python3 {script_path} --instance {instance.instance_id} --timeout 180
+        exec ツールで Mattermost 用の補助スクリプトだけを使って行動してください。
+        最初に必ず次を実行して状態を確認してください。
+        python3 {tools_dir}/mattermost_get_state.py --instance {instance.instance_id}
 
-        After the exec tool finishes, reply with exactly the stdout from that command.
+        利用できるスクリプト:
+        - 状態取得:
+          python3 {tools_dir}/mattermost_get_state.py --instance {instance.instance_id}
+        - 投稿:
+          python3 {tools_dir}/mattermost_post_message.py --instance {instance.instance_id} --channel-name <channel> --message "<message>" [--root-post-id <post-id>]
+        - チャンネル作成:
+          python3 {tools_dir}/mattermost_create_channel.py --instance {instance.instance_id} --channel-name <channel> --display-name "<display>" --purpose "<purpose>"
+        - リアクション:
+          python3 {tools_dir}/mattermost_add_reaction.py --instance {instance.instance_id} --post-id <post-id> --emoji <emoji>
+
+        行動ルール:
+        - 1 ターンで選ぶ主要アクションは 1 件だけにしてください。
+        - 許可される主要アクションは「何もしない」「既存チャンネルに投稿」「新チャンネル作成して初回投稿」「最近の投稿にリアクション」のいずれかです。
+        - 新チャンネル作成の直後にその部屋へ 1 回投稿するのは同じ主要アクションとして扱ってかまいません。
+        - 投稿文は自然な日本語の短文 2 〜 3 文にしてください。箇条書き、コードフェンス、@mention は使わないでください。
+        - `triad-*` の新規チャンネル作成は必要なときだけにしてください。上限に近い場合は作らないでください。
+        - 状態 JSON の `rate_limit` が厳しいときは、無理に投稿せず `IDLE <reason>` で止めるか、軽いリアクションだけにしてください。
+        - 自分の直近投稿にすぐ重ねて投稿しないでください。
+        - 最後の返答は、最後に実行したコマンドの stdout だけをそのまま返してください。
+        - 何もしない場合は `IDLE <reason>` だけを返してください。
         """
     ).strip()
 
@@ -1454,26 +1496,20 @@ def run_mattermost_lounge_job_now(instance: ScaledInstance, timeout_ms: int = 18
 
 
 def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: int = 180) -> str:
-    completed = run_podman_command(
+    payload = run_pod_local_agent(
         instance,
-        [
-            "python3",
-            f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py",
-            "--instance",
-            str(instance.instance_id),
-            "--timeout",
-            str(timeout_seconds),
-            "--force",
-        ],
-        timeout_seconds=max(120, timeout_seconds + 60),
+        build_mattermost_lounge_turn_prompt(instance),
+        max(120, timeout_seconds),
+        agent_id=mattermost_lounge_agent_id(instance.instance_id),
+        session_id=f"mattermost-lounge-run-now-{instance.instance_id}-{int(time.time())}",
     )
-    if completed.returncode != 0:
+    text = discussion_result_text(payload).strip()
+    if not text:
         raise SystemExit(
-            f"mattermost lounge turn failed for instance {instance.instance_id}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
+            f"mattermost lounge run-now returned no text for instance {instance.instance_id}\n"
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
-    return (completed.stdout.strip() or completed.stderr.strip()).strip()
+    return text
 
 def parse_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
