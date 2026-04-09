@@ -139,10 +139,9 @@ class CliTests(unittest.TestCase):
             ),
         )
         prompt = cli.build_mattermost_lounge_turn_prompt(instance)
-        self.assertIn("SOUL.md", prompt)
-        self.assertIn("IDENTITY.md", prompt)
-        self.assertIn("mattermost_get_state.py", prompt)
-        self.assertIn("helper は人格を持ちません", prompt)
+        self.assertIn("mattermost_workspace_turn.py", prompt)
+        self.assertIn("workspace の `SOUL.md` / `IDENTITY.md` を source of truth", prompt)
+        self.assertIn("stdout だけをそのまま返答してください", prompt)
 
     def test_latest_assistant_text_ignores_non_assistant_entries(self) -> None:
         payload = {
@@ -246,6 +245,7 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_workspace_turn.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())
