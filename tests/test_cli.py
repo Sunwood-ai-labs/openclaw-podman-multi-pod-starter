@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -296,7 +297,7 @@ class CliTests(unittest.TestCase):
                 exit_code = cli.cmd_launch(args)
 
             self.assertEqual(exit_code, 0)
-            self.assertIn("podman.exe kube play", output.getvalue().lower())
+            self.assertRegex(output.getvalue().lower(), r"\bpodman(?:\.exe)? kube play\b")
             self.assertIn("--network", output.getvalue().lower())
             self.assertIn("board-pod.yaml", output.getvalue().lower())
             self.assertFalse((temp_root / "instances").exists())
@@ -355,7 +356,9 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(cfg.network, cli.DEFAULT_PODMAN_NETWORK)
             self.assertEqual(cli.mattermost_host_url(cfg), "http://127.0.0.1:8065")
-            self.assertEqual(cli.mattermost_manifest_path(cfg), temp_root / ".openclaw" / "mattermost" / "pod.yaml")
+            expected_manifest = os.path.normcase(os.path.realpath(str(temp_root / ".openclaw" / "mattermost" / "pod.yaml")))
+            actual_manifest = os.path.normcase(os.path.realpath(str(cli.mattermost_manifest_path(cfg))))
+            self.assertEqual(actual_manifest, expected_manifest)
 
     def test_mattermost_persona_usernames_use_romanized_handles(self) -> None:
         self.assertEqual(cli.mattermost_persona_username(1), "iori")
