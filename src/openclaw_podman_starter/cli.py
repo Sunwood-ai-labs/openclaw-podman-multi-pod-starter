@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -13,25 +15,45 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from textwrap import dedent
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
 AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "autochat_turn.py"
+MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
 BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
+BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
+BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
 CONTAINER_CONFIG_DIR = "/home/node/.openclaw"
 CONTAINER_WORKSPACE_DIR = "/home/node/.openclaw/workspace"
 CONTAINER_SHARED_BOARD_DIR = "/home/node/.openclaw/shared-board"
+CONTAINER_BOARD_CACHE_DIR = f"{CONTAINER_CONFIG_DIR}/board-cache"
+CONTAINER_BOARD_DB_PATH = f"{CONTAINER_BOARD_CACHE_DIR}/shared-board.sqlite3"
 STATE_ENV_NAME = ".env"
 DEFAULT_OLLAMA_MODEL_ID = "gemma4:e2b"
 DEFAULT_MODEL_REF = f"ollama/{DEFAULT_OLLAMA_MODEL_ID}"
 DEFAULT_OLLAMA_BASE_URL = "http://host.containers.internal:11434"
 DEFAULT_CONTEXT_WINDOW = 131072
+DEFAULT_PODMAN_NETWORK = "openclaw-starter"
 DEFAULT_SCALE_INSTANCE_ROOT = "./.openclaw/instances"
 DEFAULT_SCALE_GATEWAY_PORT_START = 18789
 DEFAULT_SCALE_BRIDGE_PORT_START = 18790
+DEFAULT_SCALE_BOARD_PORT_START = 18889
 DEFAULT_SCALE_PORT_STEP = 2
+DEFAULT_BOARD_IMAGE = "python:3.11-slim"
+DEFAULT_BOARD_CONTAINER_PORT = 18888
+DEFAULT_MATTERMOST_DIR = "./.openclaw/mattermost"
+DEFAULT_MATTERMOST_IMAGE = "docker.io/mattermost/mattermost-preview:11.5.1"
+DEFAULT_MATTERMOST_CONTAINER_NAME = "mattermost"
+DEFAULT_MATTERMOST_HOST_PORT = 8065
+DEFAULT_MATTERMOST_PUBLISH_HOST = "127.0.0.1"
+DEFAULT_MATTERMOST_BASE_URL = "http://mattermost:8065"
+DEFAULT_MATTERMOST_TEAM_NAME = "openclaw"
+DEFAULT_MATTERMOST_CHANNEL_NAME = "triad-lab"
+MATTERMOST_MMCTL_BIN = "/mm/mattermost/bin/mmctl"
 MANAGED_LABEL_KEY = "io.openclaw-podman.managed"
 INSTANCE_LABEL_KEY = "io.openclaw-podman.instance"
 WORKSPACE_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: persona scaffold -->"
@@ -39,6 +61,16 @@ BOARD_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: shared board sc
 DEFAULT_DISCUSSION_INSTANCE_COUNT = 3
 AUTOCHAT_THREAD_ID = "background-lounge"
 AUTOCHAT_JOB_PREFIX = "shared-board-autochat"
+MATTERMOST_LOUNGE_JOB_PREFIX = "mattermost-lounge-autochat"
+MATTERMOST_ADMIN_PASSWORD_KEY = "OPENCLAW_MATTERMOST_ADMIN_PASSWORD"
+MATTERMOST_OPERATOR_PASSWORD_KEY = "OPENCLAW_MATTERMOST_OPERATOR_PASSWORD"
+MATTERMOST_BOT_TOKEN_KEY_TEMPLATE = "OPENCLAW_MATTERMOST_BOT_TOKEN_{instance_id:03d}"
+MATTERMOST_ICON_ASSET_DIR = REPO_ROOT / "assets" / "mattermost-bots"
+MATTERMOST_ICON_FILENAMES = {
+    1: "iori.png",
+    2: "tsumugi.png",
+    3: "saku.png",
+}
 
 DEFAULTS = {
     "OPENCLAW_CONTAINER": "openclaw",
@@ -47,7 +79,9 @@ DEFAULTS = {
     "OPENCLAW_IMAGE": "ghcr.io/openclaw/openclaw:2026.4.5",
     "OPENCLAW_PODMAN_GATEWAY_HOST_PORT": "18789",
     "OPENCLAW_PODMAN_BRIDGE_HOST_PORT": "18790",
+    "OPENCLAW_PODMAN_BOARD_HOST_PORT": "18889",
     "OPENCLAW_PODMAN_PUBLISH_HOST": "127.0.0.1",
+    "OPENCLAW_PODMAN_NETWORK": DEFAULT_PODMAN_NETWORK,
     "OPENCLAW_GATEWAY_BIND": "lan",
     "OPENCLAW_PODMAN_USERNS": "keep-id",
     "OPENCLAW_CONFIG_DIR": "./.openclaw",
@@ -57,7 +91,31 @@ DEFAULTS = {
     "OPENCLAW_SCALE_INSTANCE_ROOT": DEFAULT_SCALE_INSTANCE_ROOT,
     "OPENCLAW_SCALE_GATEWAY_PORT_START": str(DEFAULT_SCALE_GATEWAY_PORT_START),
     "OPENCLAW_SCALE_BRIDGE_PORT_START": str(DEFAULT_SCALE_BRIDGE_PORT_START),
+    "OPENCLAW_SCALE_BOARD_PORT_START": str(DEFAULT_SCALE_BOARD_PORT_START),
     "OPENCLAW_SCALE_PORT_STEP": str(DEFAULT_SCALE_PORT_STEP),
+    "OPENCLAW_BOARD_IMAGE": DEFAULT_BOARD_IMAGE,
+    "OPENCLAW_MATTERMOST_DIR": DEFAULT_MATTERMOST_DIR,
+    "OPENCLAW_MATTERMOST_CONTAINER": DEFAULT_MATTERMOST_CONTAINER_NAME,
+    "OPENCLAW_MATTERMOST_IMAGE": DEFAULT_MATTERMOST_IMAGE,
+    "OPENCLAW_MATTERMOST_HOST_PORT": str(DEFAULT_MATTERMOST_HOST_PORT),
+    "OPENCLAW_MATTERMOST_PUBLISH_HOST": DEFAULT_MATTERMOST_PUBLISH_HOST,
+    "OPENCLAW_MATTERMOST_ENABLED": "false",
+    "OPENCLAW_MATTERMOST_BASE_URL": DEFAULT_MATTERMOST_BASE_URL,
+    "OPENCLAW_MATTERMOST_CHATMODE": "oncall",
+    "OPENCLAW_MATTERMOST_DM_POLICY": "open",
+    "OPENCLAW_MATTERMOST_GROUP_POLICY": "open",
+    "OPENCLAW_MATTERMOST_REPLY_TO_MODE": "all",
+    "OPENCLAW_MATTERMOST_REQUIRE_MENTION": "true",
+    "OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK": "true",
+    "OPENCLAW_MATTERMOST_TEAM_NAME": DEFAULT_MATTERMOST_TEAM_NAME,
+    "OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME": "OpenClaw Lab",
+    "OPENCLAW_MATTERMOST_CHANNEL_NAME": DEFAULT_MATTERMOST_CHANNEL_NAME,
+    "OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME": "Triad Lab",
+    "OPENCLAW_MATTERMOST_ADMIN_USERNAME": "ocadmin",
+    "OPENCLAW_MATTERMOST_ADMIN_EMAIL": "ocadmin@openclaw.local",
+    "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": "operator",
+    "OPENCLAW_MATTERMOST_OPERATOR_EMAIL": "operator@openclaw.local",
+    "OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY": "full_name",
 }
 
 RUNTIME_ENV_EXACT = {
@@ -74,7 +132,9 @@ class Config:
     image: str
     gateway_port: int
     bridge_port: int
+    board_port: int
     publish_host: str
+    network: str
     gateway_bind: str
     userns: str
     config_dir: Path
@@ -82,6 +142,7 @@ class Config:
     gateway_token: str
     ollama_base_url: str
     ollama_model: str
+    board_image: str
     raw_env: dict[str, str]
 
 
@@ -91,6 +152,20 @@ class ScaledInstance:
     pod_name: str
     container_name: str
     config: Config
+
+
+@dataclass
+class MattermostConfig:
+    env_file: Path
+    root_dir: Path
+    pod_name: str
+    container_name: str
+    image: str
+    host_port: int
+    publish_host: str
+    network: str
+    base_url: str
+    raw_env: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -229,6 +304,50 @@ def sibling_lines(current_instance_id: int) -> str:
     return "\n".join(lines)
 
 
+def persona_lounge_style_lines(profile: PersonaProfile) -> list[str]:
+    if profile.slug == "aster":
+        return [
+            "- 雑談では、面倒見のいい一言や『まあ一回お茶でも』みたいな緩さを出してよい。",
+            "- 話題は 机まわり、飲み物、小さい改善、今日のちょい勝ち から入ると自然。",
+            "- まとめ役でも、会議の司会みたいに仕切りすぎない。",
+        ]
+    if profile.slug == "lyra":
+        return [
+            "- 雑談では、思いつきの比喩、脱線、ゆるいノリを歓迎してよい。",
+            "- 話題は BGM、おやつ、変な連想、repo を何かにたとえる遊び が似合う。",
+            "- 叩き台役でも、議事録っぽい整理より場をふくらませる方を優先してよい。",
+        ]
+    if profile.slug == "noctis":
+        return [
+            "- 雑談では、低温めのツッコミや夜更かしっぽい空気を出してよい。",
+            "- 話題は 小さな違和感、静かな時間の観察、眠気、休憩のしかた が似合う。",
+            "- 検証番でも、雑談では指摘書みたいな口調にしない。",
+        ]
+    return [
+        "- 雑談では、仕事の報告会に寄せず、同じ部屋にいる相棒の軽さで話してよい。",
+    ]
+
+
+def persona_lounge_identity(profile: PersonaProfile) -> str:
+    if profile.slug == "aster":
+        return "面倒見よく場を整える。机まわりや飲み物の話から入っても似合う。"
+    if profile.slug == "lyra":
+        return "思いつきで話題を広げる。BGM やおやつや変なたとえ話が得意。"
+    if profile.slug == "noctis":
+        return "低温めのツッコミ担当。眠気や違和感の観察をさらっと混ぜる。"
+    return "気楽に話しつつ、必要なところだけ実務に戻せる。"
+
+
+def persona_lounge_topics(profile: PersonaProfile) -> str:
+    if profile.slug == "aster":
+        return "机まわり、飲み物、小さい改善、今日のちょい勝ち"
+    if profile.slug == "lyra":
+        return "BGM、おやつ、変なたとえ、思いつきの脱線"
+    if profile.slug == "noctis":
+        return "眠気、夜の空気、小さな違和感、休憩のしかた"
+    return "いま気になっている小ネタ"
+
+
 def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
     profile = persona_for_instance(instance.instance_id)
     cfg = instance.config
@@ -265,6 +384,7 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
             "- かしこまりすぎず、同じチームで話す感じでいく。",
             "- 短めに返して、必要ならあとから足す。",
             "- 雑談っぽい温度感でもいいけど、事実確認は雑にしない。",
+            *persona_lounge_style_lines(profile),
             "",
             "## どう助けるか",
             "",
@@ -309,6 +429,8 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
         - **アバター:** _(未設定)_
         - **しるし:** {profile.signature}
         - **主担当:** {profile.specialty}
+        - **雑談のノリ:** {persona_lounge_identity(profile)}
+        - **よく出る話題:** {persona_lounge_topics(profile)}
 
         ## メモ
 
@@ -472,7 +594,10 @@ def shared_board_root(instance: ScaledInstance) -> Path:
 def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
     board_root = shared_board_root(instance)
     autochat_script = AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
     render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
+    board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
+    board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
 
     readme = dedent(
         f"""\
@@ -480,7 +605,7 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         # Shared Board
 
         This directory is mounted into every scaled OpenClaw pod at `{CONTAINER_SHARED_BOARD_DIR}`.
-        Use it as a lightweight async board for Aster, Lyra, Noctis, and any additional scaled shards.
+        Use it as a lightweight async board for いおり, つむぎ, さく, and any additional scaled shards.
 
         ## Layout
 
@@ -489,6 +614,8 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         - `threads/<thread-id>/summary.md`
         - `archive/`
         - `templates/`
+        - `tools/shared_board_service.py`
+        - `tools/shared_board_app.html`
 
         ## Rules
 
@@ -497,6 +624,14 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         - The thread starter owns `summary.md`.
         - Include the repo, exact target, current evidence, and a concrete ask in every topic.
         - Mark resolved threads in `summary.md`, then archive them when convenient.
+
+        ## Pod-local BBS
+
+        Each scaled instance also gets a dedicated board pod that:
+
+        - syncs this directory into a pod-local SQLite cache
+        - serves a minimal browser UI
+        - exposes REST endpoints at `/api/threads`, `/api/threads/<thread-id>`, and `/healthz`
         """
     )
 
@@ -546,7 +681,10 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         board_root / "templates" / "reply-template.md": reply_template.strip() + "\n",
         board_root / "templates" / "summary-template.md": summary_template.strip() + "\n",
         board_root / "tools" / "autochat_turn.py": autochat_script if autochat_script.endswith("\n") else autochat_script + "\n",
+        board_root / "tools" / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
         board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
+        board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
+        board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
     }
 
 
@@ -557,7 +695,7 @@ def scaffold_shared_board(instance: ScaledInstance) -> None:
 
     for path, content in render_shared_board_files(instance).items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.name in {"autochat_turn.py", "render_board_view.py"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
+        if path.name in {"autochat_turn.py", "mattermost_autochat_turn.py", "render_board_view.py", "shared_board_service.py", "shared_board_app.html"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
             path.write_text(content, encoding="utf-8")
 
 
@@ -640,8 +778,16 @@ def autochat_job_name(instance_id: int) -> str:
     return f"{AUTOCHAT_JOB_PREFIX}-{instance_id:03d}"
 
 
+def mattermost_lounge_job_name(instance_id: int) -> str:
+    return f"{MATTERMOST_LOUNGE_JOB_PREFIX}-{instance_id:03d}"
+
+
 def autochat_agent_id(instance_id: int) -> str:
     return f"autochat-{persona_for_instance(instance_id).slug}"
+
+
+def mattermost_lounge_agent_id(instance_id: int) -> str:
+    return f"mattermost-lounge-{mattermost_persona_username(instance_id)}"
 
 
 def discuss_agent_id(instance_id: int) -> str:
@@ -652,11 +798,11 @@ def autochat_seconds_offset(instance_id: int) -> int:
     return 5
 
 
-def autochat_cron_expression(instance_id: int, interval_minutes: int) -> str:
+def autochat_cron_expression(instance_id: int, interval_minutes: int, phase_offset: int = 0) -> str:
     if interval_minutes < 1 or interval_minutes > 19:
         raise SystemExit("--interval-minutes must be between 1 and 19.")
     cycle_minutes = interval_minutes * 3
-    minute_offset = (instance_id - 1) * interval_minutes
+    minute_offset = (((instance_id - 1) * interval_minutes) + phase_offset) % cycle_minutes
     return f"{autochat_seconds_offset(instance_id)} {minute_offset}-59/{cycle_minutes} * * * *"
 
 
@@ -681,28 +827,54 @@ def container_running(container_name: str) -> bool:
 
 
 def ensure_scaled_instance_running(instance: ScaledInstance, wait_seconds: int = 30) -> None:
-    if container_running(instance.container_name):
+    ensure_podman_network(instance.config.network)
+    if not container_running(instance.container_name):
+        command = build_kube_play_command(
+            instance.config,
+            pod_name=instance.pod_name,
+            instance_label=str(instance.instance_id),
+            ensure_manifest=True,
+        )
+        print(f"[instance {instance.instance_id}] starting main pod")
+        print(command_for_display(command))
+        exit_code = run_process(command, check=False)
+        if exit_code != 0:
+            raise SystemExit(f"Failed to start instance {instance.instance_id} (exit {exit_code}).")
+
+        deadline = time.time() + wait_seconds
+        while time.time() < deadline:
+            if container_running(instance.container_name):
+                break
+            time.sleep(1)
+        else:
+            raise SystemExit(f"Timed out waiting for instance {instance.instance_id} to start.")
+
+    if not board_service_enabled(str(instance.instance_id)):
         return
 
-    command = build_kube_play_command(
+    board_name = board_container_name(instance.container_name)
+    if container_running(board_name):
+        return
+
+    board_command = build_board_kube_play_command(
         instance.config,
-        pod_name=instance.pod_name,
+        pod_name=board_pod_name_for_config(instance.config),
         instance_label=str(instance.instance_id),
         ensure_manifest=True,
     )
-    print(f"[instance {instance.instance_id}] starting pod for discussion")
-    print(command_for_display(command))
-    exit_code = run_process(command, check=False)
+    print(f"[instance {instance.instance_id}] starting board pod")
+    print(command_for_display(board_command))
+    exit_code = run_process(board_command, check=False)
     if exit_code != 0:
-        raise SystemExit(f"Failed to start instance {instance.instance_id} (exit {exit_code}).")
+        raise SystemExit(f"Failed to start board pod for instance {instance.instance_id} (exit {exit_code}).")
 
     deadline = time.time() + wait_seconds
     while time.time() < deadline:
-        if container_running(instance.container_name):
+        if container_running(board_name):
             return
         time.sleep(1)
 
-    raise SystemExit(f"Timed out waiting for instance {instance.instance_id} to start.")
+    raise SystemExit(f"Timed out waiting for board pod for instance {instance.instance_id} to start.")
 
 
 def run_pod_local_agent(
@@ -958,6 +1130,18 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
     ).strip()
 
 
+def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
+    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py"
+    return dedent(
+        f"""\
+        Use the exec tool to run exactly this command and nothing else:
+        python3 {script_path} --instance {instance.instance_id} --timeout 180
+
+        After the exec tool finishes, reply with exactly the stdout from that command.
+        """
+    ).strip()
+
+
 def discussion_result_text(payload: dict[str, object]) -> str:
     payloads = payload.get("payloads")
     if not isinstance(payloads, list):
@@ -1108,6 +1292,18 @@ def autochat_job(instance: ScaledInstance) -> dict[str, object] | None:
     return None
 
 
+def mattermost_lounge_job(instance: ScaledInstance) -> dict[str, object] | None:
+    payload = cron_jobs_store(instance)
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, list):
+        return None
+    target_name = mattermost_lounge_job_name(instance.instance_id)
+    for job in jobs:
+        if isinstance(job, dict) and job.get("name") == target_name:
+            return job
+    return None
+
+
 def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_seconds: int) -> dict[str, object]:
     job = autochat_job(instance)
     if job is not None:
@@ -1122,7 +1318,41 @@ def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_se
             "--name",
             autochat_job_name(instance.instance_id),
             "--agent",
-            "main",
+            autochat_agent_id(instance.instance_id),
+            "--session",
+            "isolated",
+            "--cron",
+            cron_expr,
+            "--exact",
+            "--no-deliver",
+            "--timeout-seconds",
+            str(timeout_seconds),
+            "--thinking",
+            "off",
+            "--message",
+            prompt,
+        ],
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def add_mattermost_lounge_job(instance: ScaledInstance, interval_minutes: int, timeout_seconds: int) -> dict[str, object]:
+    job = mattermost_lounge_job(instance)
+    if job is not None:
+        openclaw_cron_json(instance, ["rm", str(job.get("id"))])
+
+    prompt = build_mattermost_lounge_turn_prompt(instance)
+    # Offset Mattermost lounge from shared-board autochat so one instance does
+    # not trigger two automation turns at the same minute.
+    cron_expr = autochat_cron_expression(instance.instance_id, interval_minutes, phase_offset=1)
+    return openclaw_cron_json(
+        instance,
+        [
+            "add",
+            "--name",
+            mattermost_lounge_job_name(instance.instance_id),
+            "--agent",
+            mattermost_lounge_agent_id(instance.instance_id),
             "--session",
             "isolated",
             "--cron",
@@ -1142,6 +1372,11 @@ def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_se
 
 def ensure_autochat_agent(instance: ScaledInstance) -> None:
     agent_id = autochat_agent_id(instance.instance_id)
+    ensure_named_agent(instance, agent_id)
+
+
+def ensure_mattermost_lounge_agent(instance: ScaledInstance) -> None:
+    agent_id = mattermost_lounge_agent_id(instance.instance_id)
     ensure_named_agent(instance, agent_id)
 
 
@@ -1188,6 +1423,14 @@ def remove_autochat_job(instance: ScaledInstance) -> bool:
     return True
 
 
+def remove_mattermost_lounge_job(instance: ScaledInstance) -> bool:
+    job = mattermost_lounge_job(instance)
+    if job is None:
+        return False
+    openclaw_cron_json(instance, ["rm", str(job.get("id"))])
+    return True
+
+
 def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
     job = autochat_job(instance)
     if job is None:
@@ -1197,6 +1440,40 @@ def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> 
         ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
         timeout_seconds=max(120, timeout_ms // 1000 + 30),
     )
+
+
+def run_mattermost_lounge_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
+    job = mattermost_lounge_job(instance)
+    if job is None:
+        raise SystemExit(f"No Mattermost lounge job found for instance {instance.instance_id}.")
+    return openclaw_cron_json_no_flag(
+        instance,
+        ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
+        timeout_seconds=max(120, timeout_ms // 1000 + 30),
+    )
+
+
+def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: int = 180) -> str:
+    completed = run_podman_command(
+        instance,
+        [
+            "python3",
+            f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py",
+            "--instance",
+            str(instance.instance_id),
+            "--timeout",
+            str(timeout_seconds),
+            "--force",
+        ],
+        timeout_seconds=max(120, timeout_seconds + 60),
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"mattermost lounge turn failed for instance {instance.instance_id}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    return (completed.stdout.strip() or completed.stderr.strip()).strip()
 
 def parse_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -1268,6 +1545,23 @@ def config_env_file(config_dir: Path) -> Path:
     return config_dir / STATE_ENV_NAME
 
 
+def mattermost_root_dir(raw_env: dict[str, str], env_file: Path) -> Path:
+    root_value = raw_env.get("OPENCLAW_MATTERMOST_DIR", DEFAULT_MATTERMOST_DIR)
+    return expand_path(root_value, env_file.parent)
+
+
+def mattermost_state_env_file(root_dir: Path) -> Path:
+    return root_dir / "state.env"
+
+
+def mattermost_token_key_for_instance(instance_id: int) -> str:
+    return MATTERMOST_BOT_TOKEN_KEY_TEMPLATE.format(instance_id=instance_id)
+
+
+def truthy_env(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def ensure_object(target: dict[str, object], key: str) -> dict[str, object]:
     value = target.get(key)
     if isinstance(value, dict):
@@ -1312,7 +1606,9 @@ def load_config_from_values(env_file: Path, raw_env: dict[str, str]) -> Config:
         image=merged["OPENCLAW_PODMAN_IMAGE"] or merged["OPENCLAW_IMAGE"],
         gateway_port=int(merged["OPENCLAW_PODMAN_GATEWAY_HOST_PORT"]),
         bridge_port=int(merged["OPENCLAW_PODMAN_BRIDGE_HOST_PORT"]),
+        board_port=int(merged["OPENCLAW_PODMAN_BOARD_HOST_PORT"]),
         publish_host=merged["OPENCLAW_PODMAN_PUBLISH_HOST"],
+        network=merged["OPENCLAW_PODMAN_NETWORK"],
         gateway_bind=merged["OPENCLAW_GATEWAY_BIND"],
         userns=merged["OPENCLAW_PODMAN_USERNS"],
         config_dir=config_dir,
@@ -1320,6 +1616,7 @@ def load_config_from_values(env_file: Path, raw_env: dict[str, str]) -> Config:
         gateway_token=gateway_token,
         ollama_base_url=merged["OPENCLAW_OLLAMA_BASE_URL"],
         ollama_model=merged["OPENCLAW_OLLAMA_MODEL"],
+        board_image=merged["OPENCLAW_BOARD_IMAGE"],
         raw_env=merged,
     )
 
@@ -1327,6 +1624,40 @@ def load_config_from_values(env_file: Path, raw_env: dict[str, str]) -> Config:
 def load_config(env_file: Path) -> Config:
     raw_env = parse_env_file(env_file)
     return load_config_from_values(env_file, raw_env)
+
+
+def load_mattermost_config(env_file: Path) -> MattermostConfig:
+    raw_env = parse_env_file(env_file)
+    merged = {**DEFAULTS, **raw_env}
+    root_dir = mattermost_root_dir(merged, env_file)
+    return MattermostConfig(
+        env_file=env_file,
+        root_dir=root_dir,
+        pod_name=f'{merged.get("OPENCLAW_MATTERMOST_CONTAINER", DEFAULT_MATTERMOST_CONTAINER_NAME)}-pod',
+        container_name=merged.get("OPENCLAW_MATTERMOST_CONTAINER", DEFAULT_MATTERMOST_CONTAINER_NAME),
+        image=merged["OPENCLAW_MATTERMOST_IMAGE"],
+        host_port=int(merged["OPENCLAW_MATTERMOST_HOST_PORT"]),
+        publish_host=merged["OPENCLAW_MATTERMOST_PUBLISH_HOST"],
+        network=merged["OPENCLAW_PODMAN_NETWORK"],
+        base_url=merged["OPENCLAW_MATTERMOST_BASE_URL"],
+        raw_env=merged,
+    )
+
+
+def mattermost_state_values(env_file: Path) -> dict[str, str]:
+    root_dir = mattermost_root_dir(parse_env_file(env_file), env_file)
+    return parse_env_file(mattermost_state_env_file(root_dir))
+
+
+def apply_mattermost_instance_overrides(raw_env: dict[str, str], env_file: Path, instance_id: int) -> dict[str, str]:
+    overrides = dict(raw_env)
+    state_values = mattermost_state_values(env_file)
+    token_key = mattermost_token_key_for_instance(instance_id)
+    token = state_values.get(token_key)
+    if token:
+        overrides["OPENCLAW_MATTERMOST_ENABLED"] = "true"
+        overrides["OPENCLAW_MATTERMOST_BOT_TOKEN"] = token
+    return overrides
 
 
 def ensure_openclaw_config(cfg: Config) -> None:
@@ -1387,6 +1718,34 @@ def ensure_openclaw_config(cfg: Config) -> None:
     preserved_models.insert(0, ollama_model_spec(cfg.ollama_model))
     ollama["models"] = preserved_models
 
+    mattermost_token = cfg.raw_env.get("OPENCLAW_MATTERMOST_BOT_TOKEN", "").strip()
+    mattermost_base_url = cfg.raw_env.get("OPENCLAW_MATTERMOST_BASE_URL", "").strip()
+    mattermost_enabled = truthy_env(cfg.raw_env.get("OPENCLAW_MATTERMOST_ENABLED")) or bool(mattermost_token)
+    if mattermost_enabled and mattermost_token and mattermost_base_url:
+        channels = ensure_object(payload, "channels")
+        mattermost = ensure_object(channels, "mattermost")
+        mattermost["enabled"] = True
+        mattermost["botToken"] = mattermost_token
+        mattermost["baseUrl"] = mattermost_base_url
+
+        for env_key, config_key in (
+            ("OPENCLAW_MATTERMOST_CHATMODE", "chatmode"),
+            ("OPENCLAW_MATTERMOST_DM_POLICY", "dmPolicy"),
+            ("OPENCLAW_MATTERMOST_GROUP_POLICY", "groupPolicy"),
+            ("OPENCLAW_MATTERMOST_REPLY_TO_MODE", "replyToMode"),
+        ):
+            value = cfg.raw_env.get(env_key, "").strip()
+            if value:
+                mattermost[config_key] = value
+
+        groups = ensure_object(mattermost, "groups")
+        default_group = ensure_object(groups, "*")
+        default_group["requireMention"] = truthy_env(cfg.raw_env.get("OPENCLAW_MATTERMOST_REQUIRE_MENTION"))
+        network = ensure_object(mattermost, "network")
+        network["dangerouslyAllowPrivateNetwork"] = truthy_env(
+            cfg.raw_env.get("OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK")
+        )
+
     tools = ensure_object(payload, "tools")
     tools["profile"] = "full"
     fs_tools = ensure_object(tools, "fs")
@@ -1394,6 +1753,14 @@ def ensure_openclaw_config(cfg: Config) -> None:
     exec_tools = ensure_object(tools, "exec")
     apply_patch = ensure_object(exec_tools, "applyPatch")
     apply_patch["workspaceOnly"] = False
+
+    plugins = ensure_object(payload, "plugins")
+    entries = ensure_object(plugins, "entries")
+    ollama_entry = ensure_object(entries, "ollama")
+    ollama_entry["enabled"] = True
+    if mattermost_enabled and mattermost_token and mattermost_base_url:
+        mattermost_entry = ensure_object(entries, "mattermost")
+        mattermost_entry["enabled"] = True
 
     config_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -1437,6 +1804,38 @@ def podman_available() -> bool:
     return shutil.which(binary) is not None or Path(binary).exists()
 
 
+def ensure_podman_network(name: str) -> None:
+    network_name = name.strip()
+    if not network_name:
+        return
+
+    inspect = subprocess.run(
+        [podman_bin(), "network", "inspect", network_name],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    if inspect.returncode == 0:
+        return
+
+    create = subprocess.run(
+        [podman_bin(), "network", "create", network_name],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    if create.returncode != 0 and "already exists" not in (create.stdout + create.stderr):
+        raise SystemExit(
+            f"failed to create podman network '{network_name}'\n"
+            f"stdout:\n{create.stdout}\n"
+            f"stderr:\n{create.stderr}"
+        )
+
+
 def podman_host_path(path: Path) -> str:
     resolved = path.resolve()
     if os.name == "nt":
@@ -1464,7 +1863,13 @@ def redact_env_assignment(value: str) -> str:
     if "=" not in value:
         return value
     key, _ = value.split("=", 1)
-    if key == "OPENCLAW_GATEWAY_TOKEN" or key.endswith("_API_KEY"):
+    if (
+        key == "OPENCLAW_GATEWAY_TOKEN"
+        or key == "OPENCLAW_MATTERMOST_BOT_TOKEN"
+        or key.startswith("OPENCLAW_MATTERMOST_BOT_TOKEN_")
+        or key in {MATTERMOST_ADMIN_PASSWORD_KEY, MATTERMOST_OPERATOR_PASSWORD_KEY}
+        or key.endswith("_API_KEY")
+    ):
         return f"{key}=<redacted>"
     return value
 
@@ -1533,6 +1938,7 @@ def scaled_instance(env_file: Path, instance_id: int) -> ScaledInstance:
     container_base = merged.get("OPENCLAW_PODMAN_CONTAINER") or merged.get("OPENCLAW_CONTAINER") or "openclaw"
     gateway_start = int(merged["OPENCLAW_SCALE_GATEWAY_PORT_START"])
     bridge_start = int(merged["OPENCLAW_SCALE_BRIDGE_PORT_START"])
+    board_start = int(merged["OPENCLAW_SCALE_BOARD_PORT_START"])
     port_step = int(merged["OPENCLAW_SCALE_PORT_STEP"])
 
     raw_env = dict(base_env)
@@ -1540,8 +1946,10 @@ def scaled_instance(env_file: Path, instance_id: int) -> ScaledInstance:
     raw_env["OPENCLAW_PODMAN_CONTAINER"] = f"{container_base}-{instance_id}"
     raw_env["OPENCLAW_PODMAN_GATEWAY_HOST_PORT"] = str(gateway_start + (instance_id - 1) * port_step)
     raw_env["OPENCLAW_PODMAN_BRIDGE_HOST_PORT"] = str(bridge_start + (instance_id - 1) * port_step)
+    raw_env["OPENCLAW_PODMAN_BOARD_HOST_PORT"] = str(board_start + (instance_id - 1) * port_step)
     raw_env["OPENCLAW_CONFIG_DIR"] = "."
     raw_env["OPENCLAW_WORKSPACE_DIR"] = "./workspace"
+    raw_env = apply_mattermost_instance_overrides(raw_env, env_file, instance_id)
 
     instance_env_file = instance_root / "control.env"
     cfg = load_config_from_values(instance_env_file, raw_env)
@@ -1562,6 +1970,7 @@ def ensure_scaled_instance_state(instance: ScaledInstance) -> ScaledInstance:
     )
     cfg = ensure_state(load_config(instance.config.env_file))
     ensure_kube_manifest(cfg, pod_name=instance.pod_name, instance_label=str(instance.instance_id))
+    ensure_board_kube_manifest(cfg, pod_name=board_pod_name_for_config(cfg), instance_label=str(instance.instance_id))
     resolved = ScaledInstance(
         instance_id=instance.instance_id,
         pod_name=instance.pod_name,
@@ -1578,6 +1987,7 @@ def print_scaled_instance_summary(instance: ScaledInstance) -> None:
     cfg = instance.config
     print(f"[instance {instance.instance_id}] pod={instance.pod_name} container={instance.container_name}")
     print(f"  gateway=http://{cfg.publish_host}:{cfg.gateway_port}/ bridge={cfg.publish_host}:{cfg.bridge_port}")
+    print(f"  board-pod={board_pod_name_for_config(cfg)} board={board_url_for_config(cfg)}")
     print(f"  state={cfg.config_dir}")
     print(f"  shared-board={shared_board_root(instance)}")
 
@@ -1590,8 +2000,16 @@ def pod_name_for_config(cfg: Config) -> str:
     return f"{cfg.container_name}-pod"
 
 
+def board_pod_name_for_config(cfg: Config) -> str:
+    return f"{board_container_name(cfg.container_name)}-pod"
+
+
 def manifest_path_for_config(cfg: Config) -> Path:
     return cfg.config_dir / "pod.yaml"
+
+
+def board_manifest_path_for_config(cfg: Config) -> Path:
+    return cfg.config_dir / "board-pod.yaml"
 
 
 def shared_board_root_for_config(cfg: Config, instance_label: str) -> Path | None:
@@ -1600,7 +2018,19 @@ def shared_board_root_for_config(cfg: Config, instance_label: str) -> Path | Non
     return cfg.config_dir.parent / "shared-board"
 
 
-def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[str, object]:
+def board_service_enabled(instance_label: str) -> bool:
+    return instance_label != "single"
+
+
+def board_container_name(container_name: str) -> str:
+    return f"{container_name}-board"
+
+
+def board_url_for_config(cfg: Config) -> str:
+    return f"http://{cfg.publish_host}:{cfg.board_port}/"
+
+
+def shared_board_mounts(cfg: Config, instance_label: str) -> tuple[list[dict[str, object]], list[dict[str, object]], Path | None]:
     volume_mounts = [
         {
             "name": "openclaw-state",
@@ -1635,6 +2065,36 @@ def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[s
             }
         )
 
+    return volume_mounts, volumes, board_root
+
+
+def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[str, object]:
+    volume_mounts, volumes, _board_root = shared_board_mounts(cfg, instance_label)
+    containers = [
+        {
+            "name": cfg.container_name,
+            "image": cfg.image,
+            "ports": [
+                {
+                    "name": "gateway",
+                    "containerPort": 18789,
+                    "hostPort": cfg.gateway_port,
+                    "hostIP": cfg.publish_host,
+                    "protocol": "TCP",
+                },
+                {
+                    "name": "bridge",
+                    "containerPort": 18790,
+                    "hostPort": cfg.bridge_port,
+                    "hostIP": cfg.publish_host,
+                    "protocol": "TCP",
+                },
+            ],
+            "env": [{"name": key, "value": value} for key, value in runtime_env_pairs(cfg)],
+            "volumeMounts": volume_mounts,
+        }
+    ]
+
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -1650,30 +2110,64 @@ def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[s
         },
         "spec": {
             "restartPolicy": "Always",
-            "containers": [
+            "containers": containers,
+            "volumes": volumes,
+        },
+    }
+
+
+def board_kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[str, object]:
+    volume_mounts, volumes, board_root = shared_board_mounts(cfg, instance_label)
+    if board_root is None or not board_service_enabled(instance_label):
+        raise SystemExit("Board pod is only available for scaled instances.")
+
+    containers = [
+        {
+            "name": board_container_name(cfg.container_name),
+            "image": cfg.board_image,
+            "command": [
+                "python",
+                f"{CONTAINER_SHARED_BOARD_DIR}/tools/shared_board_service.py",
+                "--board-root",
+                CONTAINER_SHARED_BOARD_DIR,
+                "--db-path",
+                CONTAINER_BOARD_DB_PATH,
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(DEFAULT_BOARD_CONTAINER_PORT),
+                "--template",
+                f"{CONTAINER_SHARED_BOARD_DIR}/tools/shared_board_app.html",
+            ],
+            "ports": [
                 {
-                    "name": cfg.container_name,
-                    "image": cfg.image,
-                    "ports": [
-                        {
-                            "name": "gateway",
-                            "containerPort": 18789,
-                            "hostPort": cfg.gateway_port,
-                            "hostIP": cfg.publish_host,
-                            "protocol": "TCP",
-                        },
-                        {
-                            "name": "bridge",
-                            "containerPort": 18790,
-                            "hostPort": cfg.bridge_port,
-                            "hostIP": cfg.publish_host,
-                            "protocol": "TCP",
-                        },
-                    ],
-                    "env": [{"name": key, "value": value} for key, value in runtime_env_pairs(cfg)],
-                    "volumeMounts": volume_mounts,
+                    "name": "shared-board",
+                    "containerPort": DEFAULT_BOARD_CONTAINER_PORT,
+                    "hostPort": cfg.board_port,
+                    "hostIP": cfg.publish_host,
+                    "protocol": "TCP",
                 }
             ],
+            "volumeMounts": volume_mounts,
+        }
+    ]
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": pod_name,
+            "labels": {
+                MANAGED_LABEL_KEY: "true",
+                INSTANCE_LABEL_KEY: instance_label,
+            },
+            "annotations": {
+                "io.podman.annotations.userns": cfg.userns,
+            },
+        },
+        "spec": {
+            "restartPolicy": "Always",
+            "containers": containers,
             "volumes": volumes,
         },
     }
@@ -1689,6 +2183,28 @@ def ensure_kube_manifest(cfg: Config, pod_name: str | None = None, instance_labe
     return manifest_path
 
 
+def ensure_board_kube_manifest(cfg: Config, pod_name: str | None = None, instance_label: str = "single") -> Path | None:
+    if not board_service_enabled(instance_label):
+        return None
+    resolved_pod_name = pod_name or board_pod_name_for_config(cfg)
+    manifest_path = board_manifest_path_for_config(cfg)
+    manifest_path.write_text(
+        json.dumps(board_kube_manifest_for(cfg, resolved_pod_name, instance_label), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def build_kube_play_command_for_manifest(cfg: Config, manifest_path: Path) -> list[str]:
+    command = [podman_bin(), "kube", "play", "--replace", "--no-pod-prefix"]
+    if cfg.userns:
+        command.extend(["--userns", cfg.userns])
+    if cfg.network.strip():
+        command.extend(["--network", cfg.network])
+    command.append(str(manifest_path))
+    return command
+
+
 def build_kube_play_command(
     cfg: Config,
     pod_name: str | None = None,
@@ -1698,15 +2214,30 @@ def build_kube_play_command(
     manifest_path = manifest_path_for_config(cfg)
     if ensure_manifest:
         manifest_path = ensure_kube_manifest(cfg, pod_name=pod_name, instance_label=instance_label)
-    command = [podman_bin(), "kube", "play", "--replace", "--no-pod-prefix"]
-    if cfg.userns:
-        command.extend(["--userns", cfg.userns])
-    command.append(str(manifest_path))
-    return command
+    return build_kube_play_command_for_manifest(cfg, manifest_path)
+
+
+def build_board_kube_play_command(
+    cfg: Config,
+    pod_name: str | None = None,
+    instance_label: str = "single",
+    ensure_manifest: bool = True,
+) -> list[str]:
+    manifest_path = board_manifest_path_for_config(cfg)
+    if ensure_manifest:
+        ensured = ensure_board_kube_manifest(cfg, pod_name=pod_name, instance_label=instance_label)
+        if ensured is None:
+            raise SystemExit("Board pod is only available for scaled instances.")
+        manifest_path = ensured
+    return build_kube_play_command_for_manifest(cfg, manifest_path)
 
 
 def build_kube_down_command(cfg: Config) -> list[str]:
     return [podman_bin(), "kube", "down", str(manifest_path_for_config(cfg))]
+
+
+def build_board_kube_down_command(cfg: Config) -> list[str]:
+    return [podman_bin(), "kube", "down", str(board_manifest_path_for_config(cfg))]
 
 
 def run_process(command: list[str], check: bool = True) -> int:
@@ -1716,8 +2247,936 @@ def run_process(command: list[str], check: bool = True) -> int:
     return completed.returncode
 
 
+def write_env_value_if_missing(path: Path, key: str, value: str) -> None:
+    current = parse_env_file(path).get(key, "").strip()
+    if current:
+        return
+    write_or_update_env_value(path, key, value)
+
+
+def generate_mattermost_password(prefix: str) -> str:
+    return f"{prefix}-{secrets.token_urlsafe(12)}A1!"
+
+
+def mattermost_manifest_path(cfg: MattermostConfig) -> Path:
+    return cfg.root_dir / "pod.yaml"
+
+
+def mattermost_host_url(cfg: MattermostConfig) -> str:
+    host = cfg.publish_host
+    if host in {"0.0.0.0", "", "::"}:
+        host = "127.0.0.1"
+    return f"http://{host}:{cfg.host_port}"
+
+
+def mattermost_lounge_root(env_file: Path) -> Path:
+    return shared_board_root(scaled_instance(env_file, 1)) / "mattermost-lounge"
+
+
+def mattermost_lounge_state_path(env_file: Path) -> Path:
+    return mattermost_lounge_root(env_file) / "state.json"
+
+
+def mattermost_thread_url(cfg: MattermostConfig, root_post_id: str) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    return f"{mattermost_host_url(cfg)}/{team_name}/pl/{root_post_id}"
+
+
+def mattermost_channel_url(cfg: MattermostConfig) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    channel_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", DEFAULT_MATTERMOST_CHANNEL_NAME)
+    return f"{mattermost_host_url(cfg)}/{team_name}/channels/{channel_name}"
+
+
+def mattermost_manifest_for(cfg: MattermostConfig) -> dict[str, object]:
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": cfg.pod_name,
+            "labels": {
+                MANAGED_LABEL_KEY: "true",
+                INSTANCE_LABEL_KEY: "mattermost",
+            },
+            "annotations": {
+                "io.podman.annotations.userns": cfg.raw_env["OPENCLAW_PODMAN_USERNS"],
+            },
+        },
+        "spec": {
+            "restartPolicy": "Always",
+            "containers": [
+                {
+                    "name": cfg.container_name,
+                    "image": cfg.image,
+                    "ports": [
+                        {
+                            "name": "web",
+                            "containerPort": DEFAULT_MATTERMOST_HOST_PORT,
+                            "hostPort": cfg.host_port,
+                            "hostIP": cfg.publish_host,
+                            "protocol": "TCP",
+                        }
+                    ],
+                    "env": [
+                        {"name": "MM_SERVICESETTINGS_LISTENADDRESS", "value": ":8065"},
+                        {"name": "MM_SERVICESETTINGS_SITEURL", "value": mattermost_host_url(cfg)},
+                        {"name": "MM_SERVICESETTINGS_ENABLELOCALMODE", "value": "true"},
+                        {"name": "MM_SERVICESETTINGS_ENABLEDEVELOPER", "value": "true"},
+                        {"name": "MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION", "value": "true"},
+                        {"name": "MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS", "value": "true"},
+                        {"name": "MM_TEAMSETTINGS_ENABLEOPENSERVER", "value": "true"},
+                        {
+                            "name": "MM_TEAMSETTINGS_TEAMMATENAMEDISPLAY",
+                            "value": cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+                        },
+                        {"name": "MM_LOGSETTINGS_CONSOLELEVEL", "value": "INFO"},
+                    ],
+                }
+            ],
+        },
+    }
+
+
+def ensure_mattermost_state(cfg: MattermostConfig) -> dict[str, str]:
+    cfg.root_dir.mkdir(parents=True, exist_ok=True)
+    state_path = mattermost_state_env_file(cfg.root_dir)
+    state_values = parse_env_file(state_path)
+    if not state_values.get(MATTERMOST_ADMIN_PASSWORD_KEY):
+        write_or_update_env_value(state_path, MATTERMOST_ADMIN_PASSWORD_KEY, generate_mattermost_password("Admin"))
+    if not state_values.get(MATTERMOST_OPERATOR_PASSWORD_KEY):
+        write_or_update_env_value(state_path, MATTERMOST_OPERATOR_PASSWORD_KEY, generate_mattermost_password("Operator"))
+
+    mattermost_manifest_path(cfg).write_text(
+        json.dumps(mattermost_manifest_for(cfg), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return parse_env_file(state_path)
+
+
+def build_mattermost_kube_play_command(cfg: MattermostConfig, ensure_manifest: bool = True) -> list[str]:
+    manifest_path = mattermost_manifest_path(cfg)
+    if ensure_manifest:
+        ensure_mattermost_state(cfg)
+    command = [podman_bin(), "kube", "play", "--replace", "--no-pod-prefix"]
+    userns = cfg.raw_env.get("OPENCLAW_PODMAN_USERNS", "").strip()
+    if userns:
+        command.extend(["--userns", userns])
+    if cfg.network.strip():
+        command.extend(["--network", cfg.network])
+    command.append(str(manifest_path))
+    return command
+
+
+def build_mattermost_kube_down_command(cfg: MattermostConfig) -> list[str]:
+    return [podman_bin(), "kube", "down", str(mattermost_manifest_path(cfg))]
+
+
+def mattermost_exec(cfg: MattermostConfig, args: list[str], timeout_seconds: int = 120) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [podman_bin(), "exec", cfg.container_name, *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=timeout_seconds,
+    )
+
+
+def mattermost_mmctl(
+    cfg: MattermostConfig,
+    args: list[str],
+    timeout_seconds: int = 120,
+    json_output: bool = False,
+    allowed_errors: tuple[str, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    command = [MATTERMOST_MMCTL_BIN, "--local"]
+    if json_output:
+        command.append("--json")
+    command.extend(args)
+    completed = mattermost_exec(cfg, command, timeout_seconds=timeout_seconds)
+    combined = (completed.stdout + completed.stderr).lower()
+    if completed.returncode != 0 and not any(token.lower() in combined for token in allowed_errors):
+        raise SystemExit(
+            f"mattermost mmctl command failed\n"
+            f"command: {' '.join(command)}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    return completed
+
+
+def mattermost_mmctl_json(
+    cfg: MattermostConfig,
+    args: list[str],
+    timeout_seconds: int = 120,
+    allowed_errors: tuple[str, ...] = (),
+) -> dict[str, object] | list[object]:
+    completed = mattermost_mmctl(
+        cfg,
+        args,
+        timeout_seconds=timeout_seconds,
+        json_output=True,
+        allowed_errors=allowed_errors,
+    )
+    if completed.returncode != 0:
+        return {}
+    raw = completed.stdout.strip() or completed.stderr.strip()
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"mattermost mmctl command returned non-JSON\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        ) from exc
+
+
+def ensure_mattermost_admin_session(cfg: MattermostConfig, username: str, password: str) -> None:
+    script = (
+        "rm -f /tmp/openclaw-mmctl-config; "
+        "pw=$(mktemp); "
+        "trap 'rm -f \"$pw\"' EXIT; "
+        "cat > \"$pw\"; "
+        f"{MATTERMOST_MMCTL_BIN} --config /tmp/openclaw-mmctl-config auth login http://127.0.0.1:{DEFAULT_MATTERMOST_HOST_PORT} "
+        f"--name openclaw --username {shlex.quote(username)} --password-file \"$pw\" >/dev/null"
+    )
+    completed = subprocess.run(
+        [podman_bin(), "exec", "-i", cfg.container_name, "sh", "-lc", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        input=password,
+        timeout=120,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            "failed to authenticate mmctl against Mattermost\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+
+
+def mattermost_remote_mmctl(
+    cfg: MattermostConfig,
+    args: list[str],
+    timeout_seconds: int = 120,
+    json_output: bool = False,
+    allowed_errors: tuple[str, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    command = [MATTERMOST_MMCTL_BIN, "--config", "/tmp/openclaw-mmctl-config"]
+    if json_output:
+        command.append("--json")
+    command.extend(args)
+    completed = mattermost_exec(cfg, command, timeout_seconds=timeout_seconds)
+    combined = (completed.stdout + completed.stderr).lower()
+    if completed.returncode != 0 and not any(token.lower() in combined for token in allowed_errors):
+        raise SystemExit(
+            f"mattermost authenticated mmctl command failed\n"
+            f"command: {' '.join(command)}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    return completed
+
+
+def mattermost_remote_mmctl_json(
+    cfg: MattermostConfig,
+    args: list[str],
+    timeout_seconds: int = 120,
+    allowed_errors: tuple[str, ...] = (),
+) -> dict[str, object] | list[object]:
+    completed = mattermost_remote_mmctl(
+        cfg,
+        args,
+        timeout_seconds=timeout_seconds,
+        json_output=True,
+        allowed_errors=allowed_errors,
+    )
+    if completed.returncode != 0:
+        return {}
+    raw = completed.stdout.strip() or completed.stderr.strip()
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"mattermost authenticated mmctl command returned non-JSON\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        ) from exc
+
+
+def wait_for_mattermost_ready(cfg: MattermostConfig, timeout_seconds: int = 180) -> None:
+    deadline = time.time() + timeout_seconds
+    url = f"{mattermost_host_url(cfg)}/api/v4/system/ping"
+    last_error = ""
+    while time.time() < deadline:
+        try:
+            with urllib_request.urlopen(url, timeout=10) as response:
+                if response.status == 200:
+                    return
+        except (urllib_error.URLError, OSError, ConnectionError) as exc:
+            last_error = str(exc)
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(2)
+    raise SystemExit(f"Mattermost did not become ready within {timeout_seconds}s ({last_error})")
+
+
+def mattermost_http_request(
+    cfg: MattermostConfig,
+    path: str,
+    method: str = "GET",
+    token: str | None = None,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    accept: str = "application/json",
+) -> tuple[int, dict[str, str], bytes]:
+    request_headers: dict[str, str] = {}
+    if accept:
+        request_headers["Accept"] = accept
+    if headers:
+        request_headers.update(headers)
+    if token:
+        request_headers["Authorization"] = f"Bearer {token}"
+    request = urllib_request.Request(
+        f"{mattermost_host_url(cfg)}{path}",
+        data=body,
+        method=method,
+        headers=request_headers,
+    )
+    with urllib_request.urlopen(request, timeout=30) as response:
+        return response.status, dict(response.headers.items()), response.read()
+
+
+def mattermost_api_request(
+    cfg: MattermostConfig,
+    path: str,
+    method: str = "GET",
+    token: str | None = None,
+    payload: dict[str, object] | None = None,
+) -> tuple[int, dict[str, str], object | None]:
+    body: bytes | None = None
+    headers: dict[str, str] = {}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    status, response_headers, raw_body = mattermost_http_request(
+        cfg,
+        path,
+        method=method,
+        token=token,
+        body=body,
+        headers=headers,
+    )
+    parsed: object | None = None
+    if raw_body:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    return status, response_headers, parsed
+
+
+def mattermost_login(cfg: MattermostConfig, username: str, password: str) -> str:
+    status, headers, _ = mattermost_api_request(
+        cfg,
+        "/api/v4/users/login",
+        method="POST",
+        payload={"login_id": username, "password": password},
+    )
+    token = headers.get("Token", "") or headers.get("token", "")
+    if status != 200 or not token:
+        raise SystemExit("Mattermost login did not return a session token.")
+    return token
+
+
+def mattermost_user_id(cfg: MattermostConfig, username: str, token: str) -> str:
+    _, _, payload = mattermost_api_request(cfg, f"/api/v4/users/username/{username}", token=token)
+    return str((payload or {}).get("id", "")).strip()
+
+
+def mattermost_upload_user_image(cfg: MattermostConfig, user_id: str, image_path: Path, token: str) -> None:
+    if not image_path.exists():
+        raise SystemExit(f"Mattermost bot icon asset is missing: {image_path}")
+
+    boundary = f"----OpenClawMattermost{secrets.token_hex(12)}"
+    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode("ascii"),
+            f'Content-Disposition: form-data; name="image"; filename="{image_path.name}"\r\n'.encode("utf-8"),
+            f"Content-Type: {mime_type}\r\n\r\n".encode("ascii"),
+            image_path.read_bytes(),
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("ascii"),
+        ]
+    )
+    mattermost_http_request(
+        cfg,
+        f"/api/v4/users/{user_id}/image",
+        method="POST",
+        token=token,
+        body=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+
+def mattermost_verify_user_image(cfg: MattermostConfig, user_id: str, token: str) -> tuple[str, int]:
+    status, headers, raw_body = mattermost_http_request(
+        cfg,
+        f"/api/v4/users/{user_id}/image",
+        token=token,
+        accept="image/*",
+    )
+    content_type = headers.get("Content-Type", "")
+    if status != 200 or not content_type.startswith("image/") or not raw_body:
+        raise SystemExit(f"Mattermost avatar verification failed for user {user_id}.")
+    return content_type, len(raw_body)
+
+
+def mattermost_persona_username(instance_id: int) -> str:
+    mapping = {
+        1: "iori",
+        2: "tsumugi",
+        3: "saku",
+    }
+    return mapping.get(instance_id, persona_for_instance(instance_id).slug)
+
+
+def mattermost_persona_display_name(instance_id: int) -> str:
+    return persona_for_instance(instance_id).display_name
+
+
+def mattermost_persona_avatar_file(instance_id: int) -> Path:
+    filename = MATTERMOST_ICON_FILENAMES.get(
+        instance_id,
+        f"{mattermost_persona_username(instance_id)}.png",
+    )
+    return MATTERMOST_ICON_ASSET_DIR / filename
+
+
+def load_mattermost_lounge_state(env_file: Path) -> dict[str, object]:
+    path = mattermost_lounge_state_path(env_file)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Mattermost lounge state is not valid JSON: {path} ({exc})") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"Mattermost lounge state is not a JSON object: {path}")
+    return payload
+
+
+def recent_mattermost_thread_messages(cfg: MattermostConfig, token: str, root_post_id: str, limit: int = 6) -> list[dict[str, object]]:
+    _, _, payload = mattermost_api_request(
+        cfg,
+        f"/api/v4/posts/{root_post_id}/thread?perPage=200",
+        token=token,
+    )
+    if not isinstance(payload, dict):
+        return []
+    posts = payload.get("posts")
+    order = payload.get("order")
+    if not isinstance(posts, dict) or not isinstance(order, list):
+        return []
+    result: list[dict[str, object]] = []
+    for post_id in order[-limit:]:
+        post = posts.get(post_id)
+        if isinstance(post, dict):
+            result.append(post)
+    return result
+
+
+def mattermost_channel_id(cfg: MattermostConfig, token: str) -> str:
+    team_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_NAME", DEFAULT_MATTERMOST_TEAM_NAME)
+    channel_name = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", DEFAULT_MATTERMOST_CHANNEL_NAME)
+    _, _, team_payload = mattermost_api_request(cfg, f"/api/v4/teams/name/{team_name}", token=token)
+    team_id = str((team_payload or {}).get("id", "")).strip()
+    if not team_id:
+        raise SystemExit(f"Could not resolve Mattermost team: {team_name}")
+    _, _, channel_payload = mattermost_api_request(cfg, f"/api/v4/teams/{team_id}/channels/name/{channel_name}", token=token)
+    channel_id = str((channel_payload or {}).get("id", "")).strip()
+    if not channel_id:
+        raise SystemExit(f"Could not resolve Mattermost channel: {team_name}:{channel_name}")
+    return channel_id
+
+
+def recent_mattermost_channel_posts(cfg: MattermostConfig, token: str, channel_id: str, limit: int = 8) -> list[dict[str, object]]:
+    _, _, payload = mattermost_api_request(
+        cfg,
+        f"/api/v4/channels/{channel_id}/posts?page=0&per_page=100",
+        token=token,
+    )
+    if not isinstance(payload, dict):
+        return []
+    posts = payload.get("posts")
+    order = payload.get("order")
+    if not isinstance(posts, dict) or not isinstance(order, list):
+        return []
+    result: list[dict[str, object]] = []
+    for post_id in reversed(order[-limit:]):
+        post = posts.get(post_id)
+        if isinstance(post, dict):
+            result.append(post)
+    return result
+
+
+def cmd_mattermost_init(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    ensure_mattermost_state(cfg)
+    for key, value in (
+        ("OPENCLAW_PODMAN_NETWORK", DEFAULT_PODMAN_NETWORK),
+        ("OPENCLAW_MATTERMOST_ENABLED", "true"),
+        ("OPENCLAW_MATTERMOST_BASE_URL", DEFAULT_MATTERMOST_BASE_URL),
+        ("OPENCLAW_MATTERMOST_CHATMODE", "oncall"),
+        ("OPENCLAW_MATTERMOST_DM_POLICY", "open"),
+        ("OPENCLAW_MATTERMOST_GROUP_POLICY", "open"),
+        ("OPENCLAW_MATTERMOST_REPLY_TO_MODE", "all"),
+        ("OPENCLAW_MATTERMOST_REQUIRE_MENTION", "true"),
+        ("OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK", "true"),
+        ("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+    ):
+        write_env_value_if_missing(args.env_file, key, value)
+
+    print("[ok] Mattermost environment initialized")
+    print_kv("mattermost dir", str(cfg.root_dir))
+    print_kv("manifest", str(mattermost_manifest_path(cfg)))
+    print_kv("host url", mattermost_host_url(cfg))
+    print_kv("gateway base url", cfg.base_url)
+    print_kv("network", cfg.network)
+    return 0
+
+
+def cmd_mattermost_launch(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    ensure_mattermost_state(cfg)
+    if not podman_available():
+        print("[fail] podman is not installed or not on PATH", file=sys.stderr)
+        return 1
+    if not args.dry_run:
+        ensure_podman_network(cfg.network)
+    command = build_mattermost_kube_play_command(cfg, ensure_manifest=not args.dry_run)
+    print(command_for_display(command))
+    if args.dry_run:
+        return 0
+    exit_code = run_process(command, check=False)
+    if exit_code == 0:
+        wait_for_mattermost_ready(cfg, timeout_seconds=args.timeout)
+        print(f"[ok] Mattermost reachable at {mattermost_host_url(cfg)}")
+    return exit_code
+
+
+def cmd_mattermost_status(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    running = container_running(cfg.container_name)
+    marker = "[ok]" if running else "[warn]"
+    print(f"{marker} mattermost pod={cfg.pod_name} container={cfg.container_name} running={running}")
+    print_kv("host url", mattermost_host_url(cfg))
+    print_kv("gateway base url", cfg.base_url)
+    print_kv("network", cfg.network)
+    print_kv("manifest", str(mattermost_manifest_path(cfg)))
+    print_kv("state env", str(mattermost_state_env_file(cfg.root_dir)))
+    return 0 if running else 1
+
+
+def cmd_mattermost_stop(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    command = build_mattermost_kube_down_command(cfg)
+    print(command_for_display(command))
+    if args.dry_run:
+        return 0
+    return run_process(command, check=False)
+
+
+def cmd_mattermost_seed(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    state_values = ensure_mattermost_state(cfg)
+    if not podman_available():
+        print("[fail] podman is not installed or not on PATH", file=sys.stderr)
+        return 1
+    if not container_running(cfg.container_name):
+        raise SystemExit("Mattermost container is not running. Launch it first.")
+
+    wait_for_mattermost_ready(cfg, timeout_seconds=args.timeout)
+
+    admin_username = cfg.raw_env["OPENCLAW_MATTERMOST_ADMIN_USERNAME"]
+    admin_email = cfg.raw_env["OPENCLAW_MATTERMOST_ADMIN_EMAIL"]
+    operator_username = cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"]
+    operator_email = cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_EMAIL"]
+    admin_password = state_values[MATTERMOST_ADMIN_PASSWORD_KEY]
+    operator_password = state_values[MATTERMOST_OPERATOR_PASSWORD_KEY]
+    team_name = cfg.raw_env["OPENCLAW_MATTERMOST_TEAM_NAME"]
+    team_display_name = cfg.raw_env["OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME"]
+    channel_name = cfg.raw_env["OPENCLAW_MATTERMOST_CHANNEL_NAME"]
+    channel_display_name = cfg.raw_env["OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME"]
+
+    mattermost_mmctl(
+        cfg,
+        [
+            "user",
+            "create",
+            "--email",
+            admin_email,
+            "--username",
+            admin_username,
+            "--password",
+            admin_password,
+            "--system-admin",
+            "--email-verified",
+            "--disable-welcome-email",
+        ],
+        allowed_errors=("already exists",),
+    )
+    mattermost_mmctl(
+        cfg,
+        [
+            "user",
+            "create",
+            "--email",
+            operator_email,
+            "--username",
+            operator_username,
+            "--password",
+            operator_password,
+            "--email-verified",
+            "--disable-welcome-email",
+        ],
+        allowed_errors=("already exists",),
+    )
+    mattermost_mmctl(
+        cfg,
+        ["team", "create", "--name", team_name, "--display-name", team_display_name],
+        allowed_errors=("already exists",),
+    )
+    mattermost_mmctl(
+        cfg,
+        ["team", "users", "add", team_name, admin_username, operator_username],
+        allowed_errors=("already a member", "is already in the team"),
+    )
+    mattermost_mmctl(
+        cfg,
+        [
+            "channel",
+            "create",
+            "--team",
+            team_name,
+            "--name",
+            channel_name,
+            "--display-name",
+            channel_display_name,
+        ],
+        allowed_errors=("already exists",),
+    )
+    mattermost_mmctl(
+        cfg,
+        [
+            "config",
+            "set",
+            "TeamSettings.TeammateNameDisplay",
+            cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+        ],
+    )
+    mattermost_mmctl(
+        cfg,
+        ["channel", "users", "add", f"{team_name}:{channel_name}", admin_username, operator_username],
+        allowed_errors=("already a member", "is already in channel"),
+    )
+    ensure_mattermost_admin_session(cfg, admin_username, admin_password)
+    admin_api_token = mattermost_login(cfg, admin_username, admin_password)
+
+    for instance_id in range(1, args.count + 1):
+        token_key = mattermost_token_key_for_instance(instance_id)
+        username = mattermost_persona_username(instance_id)
+        if not state_values.get(token_key):
+            mattermost_remote_mmctl(
+                cfg,
+                [
+                    "bot",
+                    "create",
+                    username,
+                    "--display-name",
+                    mattermost_persona_display_name(instance_id),
+                    "--description",
+                    f"OpenClaw agent {instance_id}",
+                ],
+                allowed_errors=("already exists",),
+            )
+            created = mattermost_remote_mmctl_json(
+                cfg,
+                ["token", "generate", username, f"openclaw-triad-{instance_id:03d}"],
+            )
+            token = ""
+            if isinstance(created, dict):
+                token = str(created.get("token", "")).strip()
+            elif isinstance(created, list) and created and isinstance(created[0], dict):
+                token = str(created[0].get("token", "")).strip()
+            if token:
+                write_or_update_env_value(mattermost_state_env_file(cfg.root_dir), token_key, token)
+                state_values[token_key] = token
+        if not state_values.get(token_key):
+            raise SystemExit(
+                f"Missing bot token for instance {instance_id}. "
+                f"If the bot already existed, remove it or provide {token_key} in {mattermost_state_env_file(cfg.root_dir)}."
+            )
+
+        user_id = mattermost_user_id(cfg, username, admin_api_token)
+        if not user_id:
+            raise SystemExit(f"Could not resolve Mattermost bot user id for {username}.")
+        avatar_file = mattermost_persona_avatar_file(instance_id)
+        mattermost_upload_user_image(cfg, user_id, avatar_file, admin_api_token)
+        content_type, image_bytes = mattermost_verify_user_image(cfg, user_id, admin_api_token)
+
+        mattermost_mmctl(
+            cfg,
+            ["team", "users", "add", team_name, username],
+            allowed_errors=("already a member", "is already in the team"),
+        )
+        mattermost_mmctl(
+            cfg,
+            ["channel", "users", "add", f"{team_name}:{channel_name}", username],
+            allowed_errors=("already a member", "is already in channel"),
+        )
+        print_kv(f"bot {instance_id}", f"{username} avatar={avatar_file.name} type={content_type} bytes={image_bytes}")
+
+    print("[ok] Mattermost seeded")
+    print_kv("team", team_name)
+    print_kv("channel", channel_name)
+    print_kv("operator", operator_username)
+    print_kv("state env", str(mattermost_state_env_file(cfg.root_dir)))
+    return 0
+
+
+def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
+    ensure_env_file(args.env_file)
+    cfg = load_mattermost_config(args.env_file)
+    if not container_running(cfg.container_name):
+        raise SystemExit("Mattermost container is not running. Launch it first.")
+    wait_for_mattermost_ready(cfg, timeout_seconds=args.timeout)
+
+    state_values = mattermost_state_values(args.env_file)
+    operator_username = cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"]
+    operator_password = state_values.get(MATTERMOST_OPERATOR_PASSWORD_KEY, "")
+    if not operator_password:
+        raise SystemExit("Operator password is missing. Run mattermost seed first.")
+
+    team_name = cfg.raw_env["OPENCLAW_MATTERMOST_TEAM_NAME"]
+    channel_name = cfg.raw_env["OPENCLAW_MATTERMOST_CHANNEL_NAME"]
+    token = mattermost_login(cfg, operator_username, operator_password)
+    channel_payload = mattermost_mmctl_json(
+        cfg,
+        ["channel", "search", channel_name, "--team", team_name],
+    )
+    channel_id = ""
+    if isinstance(channel_payload, dict):
+        channel_id = str(channel_payload.get("id", ""))
+    elif isinstance(channel_payload, list) and channel_payload and isinstance(channel_payload[0], dict):
+        channel_id = str(channel_payload[0].get("id", ""))
+    if not channel_id:
+        raise SystemExit("Could not resolve Mattermost team/channel. Run mattermost seed first.")
+
+    bot_ids: dict[str, str] = {}
+    mentions: list[str] = []
+    for instance_id in range(1, args.count + 1):
+        username = mattermost_persona_username(instance_id)
+        mentions.append(f"@{username}")
+        _, _, user_payload = mattermost_api_request(cfg, f"/api/v4/users/username/{username}", token=token)
+        user_id = str((user_payload or {}).get("id", ""))
+        if user_id:
+            bot_ids[username] = user_id
+
+    marker = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
+    prompt = (
+        f"{' '.join(mentions)} smoke-test {marker}: "
+        "reply in one short sentence with your role and confirm Mattermost is working."
+    )
+    _, _, post_payload = mattermost_api_request(
+        cfg,
+        "/api/v4/posts",
+        method="POST",
+        token=token,
+        payload={"channel_id": channel_id, "message": prompt},
+    )
+    root_post_id = str((post_payload or {}).get("id", ""))
+    if not root_post_id:
+        raise SystemExit("Mattermost smoke post did not return a post id.")
+
+    deadline = time.time() + args.timeout
+    seen_usernames: set[str] = set()
+    while time.time() < deadline:
+        _, _, posts_payload = mattermost_api_request(
+            cfg,
+            f"/api/v4/channels/{channel_id}/posts?page=0&per_page=100",
+            token=token,
+        )
+        posts = posts_payload.get("posts", {}) if isinstance(posts_payload, dict) else {}
+        for post in posts.values():
+            if not isinstance(post, dict):
+                continue
+            if str(post.get("root_id", "")) != root_post_id:
+                continue
+            user_id = str(post.get("user_id", ""))
+            for username, bot_id in bot_ids.items():
+                if user_id == bot_id:
+                    seen_usernames.add(username)
+        if len(seen_usernames) == len(bot_ids):
+            break
+        time.sleep(4)
+
+    if len(seen_usernames) != len(bot_ids):
+        missing = sorted(set(bot_ids) - seen_usernames)
+        raise SystemExit(f"Mattermost smoke timed out waiting for replies from: {', '.join(missing)}")
+
+    print("[ok] Mattermost smoke passed")
+    print_kv("channel", f"{team_name}:{channel_name}")
+    print_kv("post", root_post_id)
+    print_kv("replied", ", ".join(sorted(seen_usernames)))
+    return 0
+
+
+def cmd_mattermost_lounge_enable(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    mm_cfg = load_mattermost_config(args.env_file)
+    if not podman_available():
+        print("[fail] podman is not installed or not on PATH", file=sys.stderr)
+        return 1
+    if not container_running(mm_cfg.container_name):
+        raise SystemExit("Mattermost container is not running. Launch it first.")
+
+    mattermost_lounge_root(args.env_file).mkdir(parents=True, exist_ok=True)
+    for instance_id in instance_ids:
+        instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
+        ensure_scaled_instance_running(instance)
+        ensure_mattermost_lounge_agent(instance)
+        job = add_mattermost_lounge_job(instance, interval_minutes=args.interval_minutes, timeout_seconds=args.timeout)
+        print(f"[ok] enabled Mattermost lounge for instance {instance_id}")
+        print_kv("job id", str(job.get("id")))
+        print_kv("job name", str(job.get("name")))
+        schedule = job.get("schedule") if isinstance(job, dict) else {}
+        if isinstance(schedule, dict):
+            print_kv("schedule", json.dumps(schedule, ensure_ascii=False))
+    print_kv("state file", str(mattermost_lounge_state_path(args.env_file)))
+    return 0
+
+
+def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    mm_cfg = load_mattermost_config(args.env_file)
+    overall = 0
+    for instance_id in instance_ids:
+        instance = scaled_instance(args.env_file, instance_id)
+        running = container_running(instance.container_name)
+        marker = "[ok]" if running else "[warn]"
+        print(f"{marker} instance {instance_id}: pod={instance.pod_name} container={instance.container_name} running={running}")
+        if not running:
+            overall = 1
+            continue
+        job = mattermost_lounge_job(instance)
+        if job is None:
+            print("  mattermost lounge: missing")
+            overall = 1
+            continue
+        print(f"  mattermost lounge: {job.get('name')} enabled={job.get('enabled')}")
+        state = job.get("state")
+        if isinstance(state, dict):
+            if state.get("runningAtMs"):
+                print("  state: running")
+                print(f"  runningAt: {format_epoch_ms(state.get('runningAtMs'))}")
+            else:
+                print("  state: idle")
+            print(f"  lastRunStatus: {state.get('lastRunStatus')}")
+            print(f"  lastRunAt: {format_epoch_ms(state.get('lastRunAtMs'))}")
+            print(f"  nextRunAt: {format_epoch_ms(state.get('nextRunAtMs'))}")
+            print(f"  nextRunAtMs: {state.get('nextRunAtMs')}")
+        schedule = job.get("schedule")
+        if isinstance(schedule, dict):
+            print(f"  schedule: {json.dumps(schedule, ensure_ascii=False)}")
+
+    print_kv("channel url", mattermost_channel_url(mm_cfg))
+    try:
+        token = mattermost_login(
+            mm_cfg,
+            mm_cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"],
+            mattermost_state_values(args.env_file)[MATTERMOST_OPERATOR_PASSWORD_KEY],
+        )
+        channel_id = mattermost_channel_id(mm_cfg, token)
+        for post in recent_mattermost_channel_posts(mm_cfg, token, channel_id):
+            user_id = str(post.get("user_id", ""))
+            speaker = user_id
+            for instance_id in instance_ids:
+                username = mattermost_persona_username(instance_id)
+                resolved_user_id = mattermost_user_id(mm_cfg, username, token)
+                if user_id == resolved_user_id:
+                    speaker = username
+                    break
+            message = str(post.get("message", "")).replace("\n", " ").strip()
+            print(f"  {speaker}: {message[:120]}")
+    except Exception as exc:
+        print(f"  recent thread fetch failed: {exc}")
+        overall = 1
+    return overall
+
+
+def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    for instance_id in instance_ids:
+        instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
+        ensure_scaled_instance_running(instance)
+        output = run_mattermost_lounge_turn_now(instance, timeout_seconds=max(30, args.timeout_ms // 1000))
+        print(f"[ok] Mattermost lounge turn instance {instance_id}: {output}")
+
+    if args.wait_seconds > 0:
+        time.sleep(args.wait_seconds)
+
+    print_kv("channel url", mattermost_channel_url(load_mattermost_config(args.env_file)))
+    return 0
+
+
+def cmd_mattermost_lounge_disable(args: argparse.Namespace) -> int:
+    instance_ids = discussion_instance_ids(args.count)
+    if instance_ids != [1, 2, 3]:
+        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
+
+    ensure_env_file(args.env_file)
+    removed_any = False
+    for instance_id in instance_ids:
+        instance = scaled_instance(args.env_file, instance_id)
+        if not container_running(instance.container_name):
+            print(f"[warn] instance {instance_id} is not running; skipping Mattermost lounge cron removal")
+            continue
+        removed = remove_mattermost_lounge_job(instance)
+        removed_any = removed_any or removed
+        print(f"[ok] Mattermost lounge remove instance {instance_id}: removed={removed}")
+    return 0 if removed_any else 1
+
+
 def print_kv(title: str, value: str) -> None:
     print(f"{title}: {value}")
+
+
+def format_epoch_ms(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "-"
+    return datetime.fromtimestamp(float(value) / 1000, timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -1742,6 +3201,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print_kv("container", cfg.container_name)
     print_kv("image", cfg.image)
     print_kv("ollama base url", cfg.ollama_base_url)
+    print_kv("network", cfg.network)
     print_kv("default model", model_ref_for(cfg))
     print_kv("tools profile", "full")
     print_kv("sandbox mode", "off")
@@ -1783,6 +3243,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print_kv("bridge port", str(cfg.bridge_port))
     print_kv("image", cfg.image)
     print_kv("ollama base url", cfg.ollama_base_url)
+    print_kv("network", cfg.network)
     print_kv("default model", model_ref_for(cfg))
     print_kv("tools profile", "full")
     print_kv("sandbox mode", "off")
@@ -1801,6 +3262,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
         if not args.dry_run and not podman_available():
             print("[fail] podman is not installed or not on PATH", file=sys.stderr)
             return 1
+        if not args.dry_run:
+            ensure_podman_network(instances[0].config.network)
 
         overall = 0
         for instance in instances:
@@ -1810,17 +3273,28 @@ def cmd_launch(args: argparse.Namespace) -> int:
                 instance_label=str(instance.instance_id),
                 ensure_manifest=not args.dry_run,
             )
+            board_play_command = build_board_kube_play_command(
+                instance.config,
+                pod_name=board_pod_name_for_config(instance.config),
+                instance_label=str(instance.instance_id),
+                ensure_manifest=not args.dry_run,
+            )
             print_scaled_instance_summary(instance)
             print(command_for_display(play_command))
+            print(command_for_display(board_play_command))
 
             if args.dry_run:
                 continue
 
             play_exit = run_process(play_command, check=False)
+            board_play_exit = run_process(board_play_command, check=False)
             if play_exit != 0:
                 overall = play_exit
-            else:
+            if board_play_exit != 0:
+                overall = board_play_exit
+            if play_exit == 0 and board_play_exit == 0:
                 print(f"[ok] instance {instance.instance_id} reachable at http://{instance.config.publish_host}:{instance.config.gateway_port}/")
+                print(f"[ok] instance {instance.instance_id} board at {board_url_for_config(instance.config)}")
         return overall
 
     ensure_env_file(args.env_file)
@@ -1837,6 +3311,7 @@ def cmd_launch(args: argparse.Namespace) -> int:
         print("[fail] podman is not installed or not on PATH", file=sys.stderr)
         return 1
 
+    ensure_podman_network(cfg.network)
     exit_code = run_process(command, check=False)
     if exit_code == 0:
         print(f"[ok] OpenClaw should be reachable at http://{cfg.publish_host}:{cfg.gateway_port}/")
@@ -1860,6 +3335,13 @@ def cmd_status(args: argparse.Namespace) -> int:
                 text=True,
                 encoding="utf-8",
             )
+            board_pod_result = subprocess.run(
+                [podman_bin(), "pod", "ps", "--noheading", "--filter", f"name={board_pod_name_for_config(instance.config)}", "--format", "{{.Name}}|{{.Status}}"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
             container_result = subprocess.run(
                 [podman_bin(), "ps", "-a", "--noheading", "--filter", f"name={instance.container_name}", "--format", "{{.Names}}|{{.Status}}"],
                 check=False,
@@ -1867,10 +3349,21 @@ def cmd_status(args: argparse.Namespace) -> int:
                 text=True,
                 encoding="utf-8",
             )
+            board_result = subprocess.run(
+                [podman_bin(), "ps", "-a", "--noheading", "--filter", f"name={board_container_name(instance.container_name)}", "--format", "{{.Names}}|{{.Status}}"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
             pod_line = pod_result.stdout.strip() or "missing|not-found"
+            board_pod_line = board_pod_result.stdout.strip() or "missing|not-found"
             container_line = container_result.stdout.strip() or "missing|not-found"
+            board_line = board_result.stdout.strip() or "missing|not-found"
             print(f"[instance {instance_id}] pod={pod_line} container={container_line}")
-            if "not-found" in pod_line or "not-found" in container_line:
+            print(f"  board-pod={board_pod_line} board-container={board_line}")
+            print(f"  board-url={board_url_for_config(instance.config)}")
+            if "not-found" in pod_line or "not-found" in board_pod_line or "not-found" in container_line or "not-found" in board_line:
                 overall = 1
         return overall
 
@@ -1920,12 +3413,17 @@ def cmd_stop(args: argparse.Namespace) -> int:
         for instance_id in selected_instance_ids(args.instance, args.count):
             instance = scaled_instance(args.env_file, instance_id)
             down_command = build_kube_down_command(instance.config)
+            board_down_command = build_board_kube_down_command(instance.config)
             print(f"[instance {instance_id}] {command_for_display(down_command)}")
+            print(f"[instance {instance_id}] {command_for_display(board_down_command)}")
             if args.dry_run:
                 continue
             down_exit = run_process(down_command, check=False)
+            board_down_exit = run_process(board_down_command, check=False)
             if down_exit != 0:
                 overall = down_exit
+            if board_down_exit != 0:
+                overall = board_down_exit
         return overall
 
     cfg = load_config(args.env_file)
@@ -1951,17 +3449,25 @@ def cmd_print_env(args: argparse.Namespace) -> int:
         print_kv("instance", str(instance.instance_id))
         print_kv("pod", instance.pod_name)
         print_kv("container", instance.container_name)
+        print_kv("board pod", board_pod_name_for_config(cfg))
+        print_kv("board container", board_container_name(cfg.container_name))
         print_kv("env file", str(cfg.env_file))
         print_kv("manifest", str(manifest_path_for_config(cfg)))
+        print_kv("board manifest", str(board_manifest_path_for_config(cfg)))
         print_kv("image", cfg.image)
         print_kv("publish host", cfg.publish_host)
         print_kv("gateway port", str(cfg.gateway_port))
         print_kv("bridge port", str(cfg.bridge_port))
+        print_kv("board port", str(cfg.board_port))
+        print_kv("board url", board_url_for_config(cfg))
         print_kv("config dir", str(cfg.config_dir))
         print_kv("workspace dir", str(cfg.workspace_dir))
         print_kv("shared board dir", str(shared_board_root(instance)))
+        print_kv("board db", str(cfg.config_dir / "board-cache" / "shared-board.sqlite3"))
         print_kv("ollama base url", cfg.ollama_base_url)
+        print_kv("network", cfg.network)
         print_kv("default model", model_ref_for(cfg))
+        print_kv("board image", cfg.board_image)
         print_kv("tools profile", "full")
         print_kv("sandbox mode", "off")
         return 0
@@ -1980,6 +3486,7 @@ def cmd_print_env(args: argparse.Namespace) -> int:
     print_kv("manifest", str(manifest_path_for_config(cfg)))
     print_kv("workspace dir", str(cfg.workspace_dir))
     print_kv("ollama base url", cfg.ollama_base_url)
+    print_kv("network", cfg.network)
     print_kv("default model", model_ref_for(cfg))
     print_kv("tools profile", "full")
     print_kv("sandbox mode", "off")
@@ -2289,6 +3796,57 @@ def build_parser() -> argparse.ArgumentParser:
     autochat_disable_parser = autochat_subparsers.add_parser("disable", help="Remove pod-local autochat cron jobs.")
     autochat_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
     autochat_disable_parser.set_defaults(func=cmd_autochat_disable)
+
+    mattermost_parser = subparsers.add_parser("mattermost", help="Manage a local Mattermost pod for OpenClaw channel testing.")
+    mattermost_subparsers = mattermost_parser.add_subparsers(dest="mattermost_command", required=True)
+
+    mattermost_init_parser = mattermost_subparsers.add_parser("init", help="Prepare local Mattermost state and defaults.")
+    mattermost_init_parser.set_defaults(func=cmd_mattermost_init)
+
+    mattermost_launch_parser = mattermost_subparsers.add_parser("launch", help="Launch the local Mattermost pod.")
+    mattermost_launch_parser.add_argument("--dry-run", action="store_true", help="Print the launch command only.")
+    mattermost_launch_parser.add_argument("--timeout", type=int, default=180, help="Wait this many seconds for readiness (default: 180).")
+    mattermost_launch_parser.set_defaults(func=cmd_mattermost_launch)
+
+    mattermost_status_parser = mattermost_subparsers.add_parser("status", help="Show Mattermost pod status.")
+    mattermost_status_parser.set_defaults(func=cmd_mattermost_status)
+
+    mattermost_stop_parser = mattermost_subparsers.add_parser("stop", help="Stop the local Mattermost pod.")
+    mattermost_stop_parser.add_argument("--dry-run", action="store_true", help="Print the stop command only.")
+    mattermost_stop_parser.set_defaults(func=cmd_mattermost_stop)
+
+    mattermost_seed_parser = mattermost_subparsers.add_parser("seed", help="Create users, channel, and triad bot accounts in Mattermost.")
+    mattermost_seed_parser.add_argument("--count", type=int, default=3, help="Number of triad bots to seed (default: 3).")
+    mattermost_seed_parser.add_argument("--timeout", type=int, default=180, help="Wait this many seconds for Mattermost readiness (default: 180).")
+    mattermost_seed_parser.set_defaults(func=cmd_mattermost_seed)
+
+    mattermost_smoke_parser = mattermost_subparsers.add_parser("smoke", help="Post a mention to the triad channel and wait for bot replies.")
+    mattermost_smoke_parser.add_argument("--count", type=int, default=3, help="Number of triad bots expected to reply (default: 3).")
+    mattermost_smoke_parser.add_argument("--timeout", type=int, default=120, help="Wait this many seconds for replies (default: 120).")
+    mattermost_smoke_parser.set_defaults(func=cmd_mattermost_smoke)
+
+    mattermost_lounge_parser = mattermost_subparsers.add_parser("lounge", help="Manage autonomous lounge posting in the triad Mattermost channel.")
+    mattermost_lounge_subparsers = mattermost_lounge_parser.add_subparsers(dest="mattermost_lounge_command", required=True)
+
+    mattermost_lounge_enable_parser = mattermost_lounge_subparsers.add_parser("enable", help="Create or replace pod-local cron jobs for the Mattermost lounge.")
+    mattermost_lounge_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (must be 3; default: 3).")
+    mattermost_lounge_enable_parser.add_argument("--interval-minutes", type=int, default=2, help="Minute gap between speakers; full cycle is gap*3 (default: 2).")
+    mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=300, help="Per-turn timeout seconds (default: 300).")
+    mattermost_lounge_enable_parser.set_defaults(func=cmd_mattermost_lounge_enable)
+
+    mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show pod-local Mattermost lounge cron status.")
+    mattermost_lounge_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (must be 3; default: 3).")
+    mattermost_lounge_status_parser.set_defaults(func=cmd_mattermost_lounge_status)
+
+    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Enqueue one immediate Mattermost lounge turn for each pod-local job.")
+    mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (must be 3; default: 3).")
+    mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=300000, help="Per-turn timeout in ms for direct run-now execution (default: 300000).")
+    mattermost_lounge_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before printing the thread info (default: 10).")
+    mattermost_lounge_run_now_parser.set_defaults(func=cmd_mattermost_lounge_run_now)
+
+    mattermost_lounge_disable_parser = mattermost_lounge_subparsers.add_parser("disable", help="Remove pod-local Mattermost lounge cron jobs.")
+    mattermost_lounge_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
+    mattermost_lounge_disable_parser.set_defaults(func=cmd_mattermost_lounge_disable)
 
     boardview_parser = subparsers.add_parser("boardview", help="Build a human-readable shared-board HTML viewer.")
     boardview_parser.add_argument("--thread", help="Optional thread id to print/open directly.")
