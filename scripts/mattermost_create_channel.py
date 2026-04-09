@@ -13,6 +13,7 @@ from mattermost_autochat_turn import (
     list_team_channels,
     load_control_values,
     load_mattermost_runtime,
+    mattermost_request,
     normalize_channel_name,
     resolve_team,
 )
@@ -25,6 +26,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--display-name", required=True)
     parser.add_argument("--purpose", required=True)
     return parser.parse_args()
+
+
+def ensure_user_joined_by_username(base_url: str, token: str, channel_id: str, username: str) -> None:
+    handle = username.strip()
+    if not handle:
+        return
+    _, _, payload = mattermost_request(base_url, token, f"/api/v4/users/username/{handle}")
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Could not resolve Mattermost user: {handle}")
+    user_id = str(payload.get("id", "")).strip()
+    if not user_id:
+        raise RuntimeError(f"Mattermost user has no id: {handle}")
+    _, _, _ = mattermost_request(
+        base_url,
+        token,
+        f"/api/v4/channels/{channel_id}/members",
+        method="POST",
+        payload={"user_id": user_id},
+    )
+
+
+def ensure_default_humans_joined(base_url: str, token: str, runtime: dict[str, str], channel_id: str) -> None:
+    for username in (
+        runtime.get("OPENCLAW_MATTERMOST_OPERATOR_USERNAME", ""),
+        runtime.get("OPENCLAW_MATTERMOST_ADMIN_USERNAME", ""),
+    ):
+        ensure_user_joined_by_username(base_url, token, channel_id, username)
 
 
 def main(args: argparse.Namespace) -> int:
@@ -46,6 +74,7 @@ def main(args: argparse.Namespace) -> int:
         if str(channel.get("name", "")).strip() == channel_name:
             channel_id = str(channel.get("id", "")).strip()
             ensure_joined_channel(base_url, token, me, channel_id)
+            ensure_default_humans_joined(base_url, token, runtime, channel_id)
             print(f"CHANNEL_EXISTS {channel_id} {channel_name}")
             return 0
 
@@ -56,6 +85,7 @@ def main(args: argparse.Namespace) -> int:
     created = create_public_channel(base_url, token, team_id, channel_name, args.display_name, args.purpose)
     channel_id = str(created.get("id", "")).strip()
     ensure_joined_channel(base_url, token, me, channel_id)
+    ensure_default_humans_joined(base_url, token, runtime, channel_id)
     print(f"CHANNEL_READY {channel_id} {channel_name}")
     return 0
 

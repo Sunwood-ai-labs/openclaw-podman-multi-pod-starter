@@ -174,6 +174,8 @@ def load_control_values() -> dict[str, str]:
     return {
         "team_name": env.get("OPENCLAW_MATTERMOST_TEAM_NAME", "openclaw").strip() or "openclaw",
         "default_channel": env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", "triad-lab").strip() or "triad-lab",
+        "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": env.get("OPENCLAW_MATTERMOST_OPERATOR_USERNAME", "operator").strip() or "operator",
+        "OPENCLAW_MATTERMOST_ADMIN_USERNAME": env.get("OPENCLAW_MATTERMOST_ADMIN_USERNAME", "ocadmin").strip() or "ocadmin",
         "ollama_base_url": env.get("OPENCLAW_OLLAMA_BASE_URL", "http://host.containers.internal:11434").strip(),
         "ollama_model": env.get("OPENCLAW_OLLAMA_MODEL", "gemma4:e2b").strip() or "gemma4:e2b",
     }
