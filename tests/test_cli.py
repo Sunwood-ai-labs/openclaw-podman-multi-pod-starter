@@ -162,6 +162,8 @@ class CliTests(unittest.TestCase):
                     {
                         "last_handle": "saku",
                         "last_post_id": "post123",
+                        "last_ts": 100,
+                        "root_preview": "meaningful",
                     }
                 ],
             }
@@ -210,6 +212,57 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(msg1, msg2)
         self.assertNotEqual(msg2, msg3)
         self.assertNotEqual(msg1, msg3)
+
+    def test_mattermost_get_state_prefers_non_self_reaction_candidates(self) -> None:
+        channels = [
+            {
+                "channel_name": "triad-lab",
+                "threads": [
+                    {
+                        "last_handle": "saku",
+                        "last_post_id": "self-post",
+                        "last_ts": 300,
+                        "root_preview": "meaningful",
+                    }
+                ],
+            },
+            {
+                "channel_name": "triad-free-talk",
+                "threads": [
+                    {
+                        "last_handle": "iori",
+                        "last_post_id": "other-post",
+                        "last_ts": 200,
+                        "root_preview": "meaningful",
+                    }
+                ],
+            },
+        ]
+        suggested = mattermost_get_state.build_suggested_next(
+            3,
+            default_channel="triad-lab",
+            rate_limit={"limited": False, "reason": "ok"},
+            channel_summaries=channels,
+        )
+        self.assertEqual(suggested["kind"], "reaction")
+        self.assertIn("other-post", suggested["command"])
+
+    def test_mattermost_get_state_prefers_alternate_post_channel_when_self_was_latest(self) -> None:
+        channel = mattermost_get_state.preferred_post_channel(
+            3,
+            "triad-lab",
+            [
+                {
+                    "channel_name": "triad-lab",
+                    "threads": [{"last_handle": "saku"}],
+                },
+                {
+                    "channel_name": "triad-free-talk",
+                    "threads": [{"last_handle": "iori"}],
+                },
+            ],
+        )
+        self.assertEqual(channel["channel_name"], "triad-free-talk")
 
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")

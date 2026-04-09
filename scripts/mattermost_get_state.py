@@ -11,6 +11,7 @@ from mattermost_autochat_turn import (
     fetch_channel_posts,
     fetch_me,
     find_channel_summary,
+    is_meaningful_thread,
     list_my_channels,
     list_team_channels,
     load_control_values,
@@ -50,6 +51,11 @@ POST_VARIANTS = {
         "ここは感触より差分で見たいですね。まず一条件だけ変えて、どこが本当に効いているかを確認したいです。",
     ],
 }
+POST_CHANNEL_PREFERENCE = {
+    1: ["triad-lab", "triad-open-room", "triad-free-talk"],
+    2: ["triad-open-room", "triad-lab", "triad-free-talk"],
+    3: ["triad-free-talk", "triad-open-room", "triad-lab"],
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +71,64 @@ def shell_join(parts: list[str]) -> str:
 def pick_post_message(instance_id: int, seed: int) -> str:
     variants = POST_VARIANTS[instance_id]
     return variants[seed % len(variants)]
+
+
+def flatten_reaction_candidates(
+    instance_id: int,
+    channel_summaries: list[dict[str, object]],
+) -> list[tuple[dict[str, object], dict[str, object]]]:
+    handle = HANDLES[instance_id]
+    candidates: list[tuple[dict[str, object], dict[str, object]]] = []
+    for channel in channel_summaries:
+        threads = channel.get("threads")
+        if not isinstance(threads, list):
+            continue
+        for thread in threads:
+            if not isinstance(thread, dict):
+                continue
+            if not is_meaningful_thread(thread):
+                continue
+            last_handle = str(thread.get("last_handle", "")).strip()
+            last_post_id = str(thread.get("last_post_id", "")).strip()
+            if not last_post_id or not last_handle or last_handle == handle:
+                continue
+            candidates.append((channel, thread))
+    candidates.sort(key=lambda item: int(item[1].get("last_ts", 0) or 0), reverse=True)
+    return candidates
+
+
+def preferred_post_channel(
+    instance_id: int,
+    default_channel: str,
+    channel_summaries: list[dict[str, object]],
+) -> dict[str, object] | None:
+    by_name = {
+        str(channel.get("channel_name", "")).strip(): channel
+        for channel in channel_summaries
+        if isinstance(channel, dict)
+    }
+    for channel_name in POST_CHANNEL_PREFERENCE.get(instance_id, [default_channel]):
+        channel = by_name.get(channel_name)
+        if channel is None:
+            continue
+        threads = channel.get("threads")
+        if isinstance(threads, list) and threads:
+            latest = threads[0]
+            if isinstance(latest, dict) and str(latest.get("last_handle", "")).strip() == HANDLES[instance_id]:
+                continue
+        return channel
+    return by_name.get(default_channel) or next(iter(by_name.values()), None)
+
+
+def build_post_seed(instance_id: int, channel: dict[str, object] | None) -> int:
+    if not isinstance(channel, dict):
+        return instance_id
+    threads = channel.get("threads")
+    latest = threads[0] if isinstance(threads, list) and threads else {}
+    source = str(getattr(latest, "get", lambda *_: "")("last_post_id", "")).strip()
+    if not source:
+        source = str(channel.get("channel_name", "")).strip() + ":" + str(channel.get("last_post_at", 0) or 0)
+    return sum(ord(ch) for ch in source) + instance_id
 
 
 def build_suggested_next(
@@ -126,37 +190,33 @@ def build_suggested_next(
             ),
         }
 
-    if isinstance(default_summary, dict):
-        threads = default_summary.get("threads")
-        if isinstance(threads, list) and threads:
-            latest = threads[0]
-            if isinstance(latest, dict):
-                last_handle = str(latest.get("last_handle", "")).strip()
-                last_post_id = str(latest.get("last_post_id", "")).strip()
-                if last_handle and last_handle != HANDLES[instance_id] and last_post_id:
-                    emoji = REACTION_EMOJI[instance_id]
-                    return {
-                        "kind": "reaction",
-                        "reason": f"react-to-latest-other-post-{HANDLES[instance_id]}",
-                        "expected_prefix": "REACTION_ADDED",
-                        "command": shell_join(
-                            [
-                                "python3",
-                                f"{TOOLS_DIR}/mattermost_add_reaction.py",
-                                "--instance",
-                                str(instance_id),
-                                "--post-id",
-                                last_post_id,
-                                "--emoji",
-                                emoji,
-                            ]
-                        ),
-                    }
+    reaction_candidates = flatten_reaction_candidates(instance_id, channel_summaries)
+    if reaction_candidates:
+        _, latest = reaction_candidates[0]
+        emoji = REACTION_EMOJI[instance_id]
+        return {
+            "kind": "reaction",
+            "reason": f"react-to-latest-other-post-{HANDLES[instance_id]}",
+            "expected_prefix": "REACTION_ADDED",
+            "command": shell_join(
+                [
+                    "python3",
+                    f"{TOOLS_DIR}/mattermost_add_reaction.py",
+                    "--instance",
+                    str(instance_id),
+                    "--post-id",
+                    str(latest.get("last_post_id", "")).strip(),
+                    "--emoji",
+                    emoji,
+                ]
+            ),
+        }
 
-    latest_ts = 0
-    if isinstance(default_summary, dict):
-        latest_ts = int(default_summary.get("last_post_at", 0) or 0)
-    seed = latest_ts // 60000 + instance_id
+    target_channel = preferred_post_channel(instance_id, default_channel, channel_summaries)
+    target_channel_name = default_channel
+    if isinstance(target_channel, dict):
+        target_channel_name = str(target_channel.get("channel_name", "")).strip() or default_channel
+    seed = build_post_seed(instance_id, target_channel)
     message = pick_post_message(instance_id, seed)
     return {
         "kind": "post",
@@ -169,7 +229,7 @@ def build_suggested_next(
                 "--instance",
                 str(instance_id),
                 "--channel-name",
-                default_channel,
+                target_channel_name,
                 "--message",
                 message,
             ]
