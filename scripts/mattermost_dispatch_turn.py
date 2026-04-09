@@ -55,10 +55,14 @@ def main(args: argparse.Namespace) -> int:
     if not command:
         raise RuntimeError("suggested_next.command is missing.")
     output = run_command(command)
+    followup_command = str(suggested.get("followup_command", "")).strip()
+    final_output = output
+    if followup_command:
+        final_output = run_command(followup_command)
     expected_prefix = str(suggested.get("expected_prefix", "")).strip()
-    if expected_prefix and not output.startswith(expected_prefix):
-        raise RuntimeError(f"unexpected action output: {output}")
-    print(output)
+    if expected_prefix and not final_output.startswith(expected_prefix):
+        raise RuntimeError(f"unexpected action output: {final_output}")
+    print(final_output)
     return 0
 
 

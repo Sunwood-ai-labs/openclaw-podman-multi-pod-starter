@@ -176,6 +176,23 @@ class CliTests(unittest.TestCase):
         self.assertIn("mattermost_add_reaction.py", suggested["command"])
         self.assertIn("post123", suggested["command"])
 
+    def test_mattermost_get_state_builds_public_channel_creation_for_tsumugi(self) -> None:
+        suggested = mattermost_get_state.build_suggested_next(
+            2,
+            default_channel="triad-lab",
+            rate_limit={"limited": False, "reason": "ok"},
+            channel_summaries=[
+                {
+                    "channel_name": "triad-lab",
+                    "threads": [],
+                }
+            ],
+        )
+        self.assertEqual(suggested["kind"], "create_channel")
+        self.assertIn("mattermost_create_channel.py", suggested["command"])
+        self.assertIn("triad-open-room", suggested["command"])
+        self.assertIn("mattermost_post_message.py", suggested["followup_command"])
+
     def test_mattermost_get_state_builds_idle_when_rate_limited(self) -> None:
         suggested = mattermost_get_state.build_suggested_next(
             2,

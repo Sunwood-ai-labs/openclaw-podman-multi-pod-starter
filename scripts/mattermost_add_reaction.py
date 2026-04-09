@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import argparse
 
-from mattermost_autochat_turn import HANDLES, fetch_me, load_mattermost_runtime, mattermost_request
+from mattermost_autochat_turn import (
+    HANDLES,
+    ensure_joined_channel,
+    fetch_me,
+    load_mattermost_runtime,
+    mattermost_request,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +34,15 @@ def main(args: argparse.Namespace) -> int:
     if actual_handle and actual_handle != handle:
         raise RuntimeError(f"wrong-handle expected={handle} actual={actual_handle}")
 
+    post_id = args.post_id.strip()
+    _, _, post_payload = mattermost_request(base_url, token, f"/api/v4/posts/{post_id}")
+    if not isinstance(post_payload, dict):
+        raise RuntimeError("Mattermost post lookup did not return a JSON object.")
+    channel_id = str(post_payload.get("channel_id", "")).strip()
+    if not channel_id:
+        raise RuntimeError("Mattermost post lookup returned no channel_id.")
+    ensure_joined_channel(base_url, token, me, channel_id)
+
     emoji_name = normalize_emoji_name(args.emoji)
     _, _, payload = mattermost_request(
         base_url,
@@ -36,13 +51,13 @@ def main(args: argparse.Namespace) -> int:
         method="POST",
         payload={
             "user_id": str(me.get("id", "")).strip(),
-            "post_id": args.post_id.strip(),
+            "post_id": post_id,
             "emoji_name": emoji_name,
         },
     )
     if not isinstance(payload, dict):
         raise RuntimeError("Mattermost reaction creation did not return a JSON object.")
-    print(f"REACTION_ADDED {args.post_id.strip()} :{emoji_name}:")
+    print(f"REACTION_ADDED {post_id} :{emoji_name}:")
     return 0
 
 

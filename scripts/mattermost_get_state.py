@@ -27,6 +27,12 @@ REACTION_EMOJI = {
     2: "sparkles",
     3: "thinking_face",
 }
+AUTO_PUBLIC_CHANNEL_PLAN = {
+    "channel_name": "triad-open-room",
+    "display_name": "Triad Open Room",
+    "purpose": "Public side room for emergent triad topics",
+    "message": "新しい公開チャンネルをひとつ用意しました。少し枝分かれした話題や試し書きは、ここで軽く育てていきましょう。",
+}
 POST_VARIANTS = {
     1: [
         "その視点は大事ですね。次の一歩を小さく試すなら、観測項目をひとつに絞ると見えやすくなりそうです。",
@@ -77,6 +83,49 @@ def build_suggested_next(
         }
 
     default_summary = find_channel_summary(channel_summaries, default_channel)
+    triad_channels = [
+        channel
+        for channel in channel_summaries
+        if str(channel.get("channel_name", "")).startswith("triad-")
+    ]
+    has_auto_public_channel = any(
+        str(channel.get("channel_name", "")).strip() == AUTO_PUBLIC_CHANNEL_PLAN["channel_name"]
+        for channel in channel_summaries
+    )
+    if instance_id == 2 and not has_auto_public_channel and len(triad_channels) < 4:
+        channel_name = AUTO_PUBLIC_CHANNEL_PLAN["channel_name"]
+        return {
+            "kind": "create_channel",
+            "reason": "create-shared-public-room-tsumugi",
+            "expected_prefix": "POSTED",
+            "command": shell_join(
+                [
+                    "python3",
+                    f"{TOOLS_DIR}/mattermost_create_channel.py",
+                    "--instance",
+                    str(instance_id),
+                    "--channel-name",
+                    channel_name,
+                    "--display-name",
+                    AUTO_PUBLIC_CHANNEL_PLAN["display_name"],
+                    "--purpose",
+                    AUTO_PUBLIC_CHANNEL_PLAN["purpose"],
+                ]
+            ),
+            "followup_command": shell_join(
+                [
+                    "python3",
+                    f"{TOOLS_DIR}/mattermost_post_message.py",
+                    "--instance",
+                    str(instance_id),
+                    "--channel-name",
+                    channel_name,
+                    "--message",
+                    AUTO_PUBLIC_CHANNEL_PLAN["message"],
+                ]
+            ),
+        }
+
     if isinstance(default_summary, dict):
         threads = default_summary.get("threads")
         if isinstance(threads, list) and threads:
