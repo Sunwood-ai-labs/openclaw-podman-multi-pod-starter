@@ -3094,6 +3094,14 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
         print(f"  mattermost lounge: {job.get('name')} enabled={job.get('enabled')}")
         state = job.get("state")
         if isinstance(state, dict):
+            if state.get("runningAtMs"):
+                print("  state: running")
+                print(f"  runningAt: {format_epoch_ms(state.get('runningAtMs'))}")
+            else:
+                print("  state: idle")
+            print(f"  lastRunStatus: {state.get('lastRunStatus')}")
+            print(f"  lastRunAt: {format_epoch_ms(state.get('lastRunAtMs'))}")
+            print(f"  nextRunAt: {format_epoch_ms(state.get('nextRunAtMs'))}")
             print(f"  nextRunAtMs: {state.get('nextRunAtMs')}")
         schedule = job.get("schedule")
         if isinstance(schedule, dict):
@@ -3163,6 +3171,12 @@ def cmd_mattermost_lounge_disable(args: argparse.Namespace) -> int:
 
 def print_kv(title: str, value: str) -> None:
     print(f"{title}: {value}")
+
+
+def format_epoch_ms(value: object) -> str:
+    if not isinstance(value, (int, float)):
+        return "-"
+    return datetime.fromtimestamp(float(value) / 1000, timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 def cmd_init(args: argparse.Namespace) -> int:

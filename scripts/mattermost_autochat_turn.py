@@ -5,6 +5,8 @@ import argparse
 import json
 import re
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error as urllib_error
@@ -243,6 +245,46 @@ def mattermost_request(
     )
 
 
+def send_typing(base_url: str, token: str, channel_id: str) -> None:
+    _, _, _ = mattermost_request(
+        base_url,
+        token,
+        "/api/v4/users/me/typing",
+        method="POST",
+        payload={"channel_id": channel_id},
+    )
+
+
+class TypingHeartbeat:
+    def __init__(self, base_url: str, token: str, channel_id: str, interval_seconds: float = 3.0) -> None:
+        self.base_url = base_url
+        self.token = token
+        self.channel_id = channel_id
+        self.interval_seconds = interval_seconds
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+
+        def worker() -> None:
+            while not self._stop.is_set():
+                try:
+                    send_typing(self.base_url, self.token, self.channel_id)
+                except Exception:
+                    pass
+                self._stop.wait(self.interval_seconds)
+
+        self._thread = threading.Thread(target=worker, name=f"mattermost-typing-{self.channel_id}", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+
+
 def ollama_generate(base_url: str, model: str, prompt: str, timeout_seconds: int) -> str:
     _, _, payload = http_json(
         base_url.rstrip("/") + "/api/generate",
@@ -383,18 +425,25 @@ def build_thread_summaries(posts: dict[str, object], order: list[str], bot_ids: 
                 "root_post_id": root_id,
                 "last_ts": 0,
                 "last_handle": "",
+                "root_handle": "",
                 "count": 0,
                 "root_preview": "",
+                "participants": [],
             },
         )
         bucket["count"] = int(bucket["count"]) + 1
+        user_id = str(post.get("user_id", ""))
+        handle = next((h for h, bid in bot_ids.items() if bid == user_id), user_id)
+        participants = bucket.get("participants")
+        if isinstance(participants, list) and handle and handle not in participants:
+            participants.append(handle)
         if create_at >= int(bucket["last_ts"]):
             bucket["last_ts"] = create_at
-            user_id = str(post.get("user_id", ""))
-            bucket["last_handle"] = next((h for h, bid in bot_ids.items() if bid == user_id), user_id)
+            bucket["last_handle"] = handle
         if root_id == post_id and not bucket["root_preview"]:
             preview = str(post.get("message", "")).replace("\r\n", " ").strip()
             bucket["root_preview"] = preview[:THREAD_PREVIEW_CHARS]
+            bucket["root_handle"] = handle
     return sorted(summaries.values(), key=lambda item: int(item["last_ts"]), reverse=True)
 
 
@@ -406,11 +455,22 @@ def summarize_channels(
     default_channel: str,
     bot_ids: dict[str, str],
 ) -> list[dict[str, object]]:
-    selected = [
+    triad_channels = [
         channel
         for channel in team_channels
-        if str(channel.get("name", "")).strip() == default_channel
+        if str(channel.get("name", "")).startswith(CHANNEL_PREFIX)
     ]
+    sorted_channels = sorted(triad_channels, key=lambda item: int(item.get("last_post_at", 0) or 0), reverse=True)
+    selected: list[dict[str, object]] = []
+    default_match = next((channel for channel in sorted_channels if str(channel.get("name", "")).strip() == default_channel), None)
+    if isinstance(default_match, dict):
+        selected.append(default_match)
+    for channel in sorted_channels:
+        if default_match is channel:
+            continue
+        selected.append(channel)
+        if len(selected) >= MAX_RECENT_CHANNELS:
+            break
     result: list[dict[str, object]] = []
     for channel in selected:
         channel_id = str(channel.get("id", "")).strip()
@@ -449,19 +509,24 @@ def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, obj
     display_name = DISPLAY_NAMES[instance_id]
     vibe = PERSONA_VIBES[instance_id]
     state_json = json.dumps(channel_summaries, ensure_ascii=False, indent=2)
+    triad_channel_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
     return (
         f"You are @{handle} ({display_name}) planning one autonomous Mattermost action for this turn.\n"
         f"Your conversational vibe is: {vibe}.\n"
-        + f"Operate only inside the existing Mattermost channel {default_channel!r}.\n"
-        + "Choose exactly one action from: reply, new_thread.\n"
-        + "Prefer replying where there is already energy. Start a new top-level thread only when the channel is quiet but still relevant.\n"
+        + f"Default to posting in the existing Mattermost channel {default_channel!r}.\n"
+        + "Choose exactly one action from: new_thread, create_channel.\n"
+        + f"There are currently {triad_channel_count} triad-* channels. Do not create a new channel if that would exceed {MAX_TRIAD_CHANNELS}.\n"
+        + f"If you create a channel, its name must start with {CHANNEL_PREFIX!r} and use only lowercase ascii letters, numbers, and dashes.\n"
+        + "Use new_thread when you are continuing the same general topic in the main lounge. Use create_channel only when the topic clearly shifts enough that it deserves its own room.\n"
+        + "Do not use thread replies. Post as a normal top-level channel message.\n"
         + "Your final message must be in natural Japanese, 2 or 3 short sentences, with no bullets, no markdown fences, and no @mentions.\n"
         + "Return strict JSON only with this shape:\n"
         + '{\n'
-        + '  "action": "reply|new_thread",\n'
+        + '  "action": "new_thread|create_channel",\n'
         + '  "reason": "short english reason",\n'
-        + f'  "channel_name": "{default_channel}",\n'
-        + '  "root_post_id": "required only for reply",\n'
+        + '  "channel_name": "existing-or-new-channel-name",\n'
+        + '  "display_name": "required only for create_channel",\n'
+        + '  "purpose": "required only for create_channel",\n'
         + '  "message": "required"\n'
         + '}\n'
         + "Real Mattermost state:\n"
@@ -471,8 +536,6 @@ def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, obj
 
 def plan_has_required_fields(plan: dict[str, object]) -> bool:
     action = str(plan.get("action", "")).strip()
-    if action == "reply":
-        return bool(str(plan.get("channel_name", "")).strip() and str(plan.get("root_post_id", "")).strip() and str(plan.get("message", "")).strip())
     if action == "new_thread":
         return bool(str(plan.get("channel_name", "")).strip() and str(plan.get("message", "")).strip())
     if action == "create_channel":
@@ -553,6 +616,21 @@ def find_thread_summary(channel_summaries: list[dict[str, object]], channel_name
     return None
 
 
+def is_reply_candidate_for_handle(thread: dict[str, object], handle: str) -> bool:
+    if not is_meaningful_thread(thread):
+        return False
+    last_handle = str(thread.get("last_handle", "")).strip()
+    if last_handle == handle:
+        return False
+    participants = thread.get("participants")
+    if isinstance(participants, list) and participants == [handle]:
+        return False
+    root_handle = str(thread.get("root_handle", "")).strip()
+    if root_handle == handle and int(thread.get("count", 0) or 0) <= 1:
+        return False
+    return True
+
+
 def smart_fallback_plan(instance_id: int, default_channel: str, channel_summaries: list[dict[str, object]]) -> dict[str, object]:
     if not channel_summaries:
         seed = instance_id
@@ -562,19 +640,6 @@ def smart_fallback_plan(instance_id: int, default_channel: str, channel_summarie
             "channel_name": default_channel,
             "message": pick_fallback_message(FALLBACK_THREAD_VARIANTS[instance_id], seed),
         }
-    for channel in channel_summaries:
-        threads = channel.get("threads")
-        if isinstance(threads, list) and threads:
-            thread = next((item for item in threads if isinstance(item, dict) and is_meaningful_thread(item)), None)
-            if isinstance(thread, dict):
-                seed = int(thread.get("last_ts", 0) or 0) // 60000 + instance_id
-                return {
-                    "action": "reply",
-                    "reason": "fallback-recent-thread",
-                    "channel_name": default_channel,
-                    "root_post_id": str(thread.get("root_post_id", "")).strip(),
-                    "message": pick_fallback_message(FALLBACK_REPLY_VARIANTS[instance_id], seed),
-                }
     seed = int(channel_summaries[0].get("last_post_at", 0) or 0) // 60000 + instance_id
     return {
         "action": "new_thread",
@@ -602,15 +667,10 @@ def choose_action(
         if plan_has_required_fields(plan):
             action = str(plan.get("action", "")).strip()
             channel_name = str(plan.get("channel_name", "")).strip()
-            if action not in {"reply", "new_thread"}:
+            if action not in {"new_thread", "create_channel"}:
                 return smart_fallback_plan(instance_id, default_channel, channel_summaries)
-            if channel_name != default_channel:
+            if action == "new_thread" and channel_name != default_channel:
                 return smart_fallback_plan(instance_id, default_channel, channel_summaries)
-            if action == "reply":
-                root_post_id = str(plan.get("root_post_id", "")).strip()
-                thread = find_thread_summary(channel_summaries, channel_name, root_post_id)
-                if not isinstance(thread, dict) or not is_meaningful_thread(thread):
-                    return smart_fallback_plan(instance_id, default_channel, channel_summaries)
             return plan
     return smart_fallback_plan(instance_id, default_channel, channel_summaries)
 
@@ -754,24 +814,34 @@ def main(args: argparse.Namespace) -> int:
             print(f"IDLE {reason}")
             return 0
 
-    plan = choose_action(
-        instance_id,
-        channel_summaries,
-        runtime["default_channel"],
-        args.timeout,
-        runtime["ollama_base_url"],
-        runtime["ollama_model"],
-    )
-    result = execute_action(
-        plan,
-        base_url=mattermost_base_url,
-        token=mattermost_token,
-        me=me,
-        team_id=team_id,
-        channel_summaries=channel_summaries,
-    )
-    print(result)
-    return 0
+    typing_heartbeat: TypingHeartbeat | None = None
+    channel_id = str(default_summary.get("channel_id", "")).strip() if isinstance(default_summary, dict) else ""
+    if channel_id:
+        typing_heartbeat = TypingHeartbeat(mattermost_base_url, mattermost_token, channel_id)
+        typing_heartbeat.start()
+
+    try:
+        plan = choose_action(
+            instance_id,
+            channel_summaries,
+            runtime["default_channel"],
+            args.timeout,
+            runtime["ollama_base_url"],
+            runtime["ollama_model"],
+        )
+        result = execute_action(
+            plan,
+            base_url=mattermost_base_url,
+            token=mattermost_token,
+            me=me,
+            team_id=team_id,
+            channel_summaries=channel_summaries,
+        )
+        print(result)
+        return 0
+    finally:
+        if typing_heartbeat is not None:
+            typing_heartbeat.stop()
 
 
 BOT_IDS: dict[str, str] = {}
