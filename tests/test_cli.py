@@ -13,6 +13,8 @@ from pathlib import Path
 
 from openclaw_podman_starter import cli
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 RENDER_BOARD_VIEW_PATH = Path(__file__).resolve().parents[1] / "scripts" / "render_board_view.py"
 render_board_view_spec = importlib.util.spec_from_file_location("render_board_view", RENDER_BOARD_VIEW_PATH)
@@ -27,6 +29,13 @@ shared_board_service = importlib.util.module_from_spec(shared_board_service_spec
 assert shared_board_service_spec and shared_board_service_spec.loader
 sys.modules[shared_board_service_spec.name] = shared_board_service
 shared_board_service_spec.loader.exec_module(shared_board_service)
+
+MATTERMOST_GET_STATE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "mattermost_get_state.py"
+mattermost_get_state_spec = importlib.util.spec_from_file_location("mattermost_get_state", MATTERMOST_GET_STATE_PATH)
+mattermost_get_state = importlib.util.module_from_spec(mattermost_get_state_spec)
+assert mattermost_get_state_spec and mattermost_get_state_spec.loader
+sys.modules[mattermost_get_state_spec.name] = mattermost_get_state
+mattermost_get_state_spec.loader.exec_module(mattermost_get_state)
 
 
 def write_env_file(path: Path) -> None:
@@ -130,11 +139,52 @@ class CliTests(unittest.TestCase):
             ),
         )
         prompt = cli.build_mattermost_lounge_turn_prompt(instance)
-        self.assertIn("mattermost_get_state.py", prompt)
-        self.assertIn("mattermost_post_message.py", prompt)
-        self.assertIn("mattermost_create_channel.py", prompt)
-        self.assertIn("mattermost_add_reaction.py", prompt)
-        self.assertIn("IDLE <reason>", prompt)
+        self.assertIn("mattermost_dispatch_turn.py", prompt)
+        self.assertIn("他のコマンドは実行しないでください", prompt)
+        self.assertIn("stdout だけをそのまま返答してください", prompt)
+
+    def test_latest_assistant_text_ignores_non_assistant_entries(self) -> None:
+        payload = {
+            "payloads": [
+                {"role": "tool", "text": "tool output"},
+                {"role": "assistant", "text": "python3 /tmp/example.py"},
+                {"role": "assistant", "text": "POSTED abc123"},
+            ]
+        }
+        self.assertEqual(cli.latest_assistant_text(payload), "POSTED abc123")
+
+    def test_mattermost_get_state_builds_suggested_reaction(self) -> None:
+        rate_limit = {"limited": False, "reason": "ok"}
+        channels = [
+            {
+                "channel_name": "triad-lab",
+                "threads": [
+                    {
+                        "last_handle": "saku",
+                        "last_post_id": "post123",
+                    }
+                ],
+            }
+        ]
+        suggested = mattermost_get_state.build_suggested_next(
+            1,
+            default_channel="triad-lab",
+            rate_limit=rate_limit,
+            channel_summaries=channels,
+        )
+        self.assertEqual(suggested["kind"], "reaction")
+        self.assertIn("mattermost_add_reaction.py", suggested["command"])
+        self.assertIn("post123", suggested["command"])
+
+    def test_mattermost_get_state_builds_idle_when_rate_limited(self) -> None:
+        suggested = mattermost_get_state.build_suggested_next(
+            2,
+            default_channel="triad-lab",
+            rate_limit={"limited": True, "reason": "cooldown"},
+            channel_summaries=[],
+        )
+        self.assertEqual(suggested["kind"], "idle")
+        self.assertEqual(suggested["final_text"], "IDLE cooldown")
 
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
@@ -225,6 +275,7 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_dispatch_turn.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())

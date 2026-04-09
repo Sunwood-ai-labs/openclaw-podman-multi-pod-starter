@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 
 from mattermost_autochat_turn import (
     BOT_IDS,
@@ -20,11 +21,90 @@ from mattermost_autochat_turn import (
     summarize_channels,
 )
 
+TOOLS_DIR = "/home/node/.openclaw/shared-board/tools"
+REACTION_EMOJI = {
+    1: "eyes",
+    2: "sparkles",
+    3: "thinking_face",
+}
+FALLBACK_MESSAGES = {
+    1: "その視点は大事ですね。次の一歩を小さく試すなら、観測項目をひとつに絞ると見えやすくなりそうです。",
+    2: "この話、まだ育てられそう。まずは小さく試して、どこで手応えが出るか見ていこう。",
+    3: "まだ切り分けの余地がありますね。次は条件を一つだけ動かして、差分を見たほうが良さそうです。",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch summarized Mattermost lounge state.")
     parser.add_argument("--instance", type=int, choices=sorted(HANDLES), required=True)
     return parser.parse_args()
+
+
+def shell_join(parts: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def build_suggested_next(
+    instance_id: int,
+    *,
+    default_channel: str,
+    rate_limit: dict[str, object],
+    channel_summaries: list[dict[str, object]],
+) -> dict[str, object]:
+    if rate_limit.get("limited") is True:
+        reason = str(rate_limit.get("reason", "rate-limited")).strip() or "rate-limited"
+        return {
+            "kind": "idle",
+            "reason": reason,
+            "final_text": f"IDLE {reason}",
+        }
+
+    default_summary = find_channel_summary(channel_summaries, default_channel)
+    if isinstance(default_summary, dict):
+        threads = default_summary.get("threads")
+        if isinstance(threads, list) and threads:
+            latest = threads[0]
+            if isinstance(latest, dict):
+                last_handle = str(latest.get("last_handle", "")).strip()
+                last_post_id = str(latest.get("last_post_id", "")).strip()
+                if last_handle and last_handle != HANDLES[instance_id] and last_post_id:
+                    emoji = REACTION_EMOJI[instance_id]
+                    return {
+                        "kind": "reaction",
+                        "reason": "react-to-latest-other-post",
+                        "expected_prefix": "REACTION_ADDED",
+                        "command": shell_join(
+                            [
+                                "python3",
+                                f"{TOOLS_DIR}/mattermost_add_reaction.py",
+                                "--instance",
+                                str(instance_id),
+                                "--post-id",
+                                last_post_id,
+                                "--emoji",
+                                emoji,
+                            ]
+                        ),
+                    }
+
+    message = FALLBACK_MESSAGES[instance_id]
+    return {
+        "kind": "post",
+        "reason": "top-level-default-post",
+        "expected_prefix": "POSTED",
+        "command": shell_join(
+            [
+                "python3",
+                f"{TOOLS_DIR}/mattermost_post_message.py",
+                "--instance",
+                str(instance_id),
+                "--channel-name",
+                default_channel,
+                "--message",
+                message,
+            ]
+        ),
+    }
 
 
 def main(args: argparse.Namespace) -> int:
@@ -83,6 +163,12 @@ def main(args: argparse.Namespace) -> int:
         "default_channel": runtime["default_channel"],
         "rate_limit": rate_limit,
         "channels": channel_summaries,
+        "suggested_next": build_suggested_next(
+            instance_id,
+            default_channel=runtime["default_channel"],
+            rate_limit=rate_limit,
+            channel_summaries=channel_summaries,
+        ),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
