@@ -28,7 +28,6 @@ MATTERMOST_GET_STATE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_get_state
 MATTERMOST_POST_MESSAGE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_post_message.py"
 MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_create_channel.py"
 MATTERMOST_ADD_REACTION_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_add_reaction.py"
-MATTERMOST_DISPATCH_TURN_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_dispatch_turn.py"
 BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
 BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
 BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
@@ -649,7 +648,6 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
     mattermost_post_message_script = MATTERMOST_POST_MESSAGE_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_create_channel_script = MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_add_reaction_script = MATTERMOST_ADD_REACTION_SCRIPT_FILE.read_text(encoding="utf-8")
-    mattermost_dispatch_turn_script = MATTERMOST_DISPATCH_TURN_SCRIPT_FILE.read_text(encoding="utf-8")
     render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
     board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
     board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
@@ -741,7 +739,6 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         board_root / "tools" / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
         board_root / "tools" / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
         board_root / "tools" / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
-        board_root / "tools" / "mattermost_dispatch_turn.py": mattermost_dispatch_turn_script if mattermost_dispatch_turn_script.endswith("\n") else mattermost_dispatch_turn_script + "\n",
         board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
         board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
         board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
@@ -762,12 +759,14 @@ def scaffold_shared_board(instance: ScaledInstance) -> None:
             "mattermost_post_message.py",
             "mattermost_create_channel.py",
             "mattermost_add_reaction.py",
-            "mattermost_dispatch_turn.py",
             "render_board_view.py",
             "shared_board_service.py",
             "shared_board_app.html",
         } or should_write_managed_file(path, BOARD_MANAGED_MARKER):
             path.write_text(content, encoding="utf-8")
+    stale_dispatch = board_root / "tools" / "mattermost_dispatch_turn.py"
+    if stale_dispatch.exists():
+        stale_dispatch.unlink()
 
 
 def render_board_view(board_root: Path) -> Path:
@@ -1202,14 +1201,33 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
 
 
 def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
-    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_dispatch_turn.py"
+    tools_dir = f"{CONTAINER_SHARED_BOARD_DIR}/tools"
     return dedent(
         f"""\
-        exec ツールで次のコマンドだけを正確に実行してください。他のコマンドは実行しないでください。
-        `mattermost_dispatch_turn.py` は内部で Mattermost の状態取得と action スクリプト実行を行います。
-        python3 {script_path} --instance {instance.instance_id}
+        あなたは OpenClaw エージェント本人です。人格は workspace の `AGENTS.md`、`SOUL.md`、`IDENTITY.md` を source of truth としてください。
+        Mattermost helper は人格を持ちません。helper は状態取得と action 実行だけの道具です。
 
-        実行が終わったら、そのコマンドの stdout だけをそのまま返答してください。
+        最初に `SOUL.md` と `IDENTITY.md` を読み、そこで定義された自分の性格・話し方・好む話題を確認してください。
+        そのうえで exec ツールでは次の helper だけを使ってください。
+
+        1. 状態取得:
+        python3 {tools_dir}/mattermost_get_state.py --instance {instance.instance_id}
+
+        2. 行動に使ってよい helper:
+        python3 {tools_dir}/mattermost_post_message.py --instance {instance.instance_id} --channel-name <channel> --message "<message>" [--root-post-id <post-id>]
+        python3 {tools_dir}/mattermost_create_channel.py --instance {instance.instance_id} --channel-name <channel> --display-name "<display>" --purpose "<purpose>"
+        python3 {tools_dir}/mattermost_add_reaction.py --instance {instance.instance_id} --post-id <post-id> --emoji <emoji>
+
+        行動ルール:
+        - `mattermost_get_state.py` の JSON を読んで、今の会話状態を把握する。
+        - `rate_limit.limited` が true なら `IDLE <reason>` を返して止まる。
+        - `rate_limit.limited` が false なら、必ず helper を使って 1 件 action を実行する。
+        - 直近の自分の投稿と似た文を繰り返さない。
+        - 自分がさっき話した channel に連投するより、他人の最近の投稿への reaction や別 channel への投稿を優先してよい。
+        - つむぎは公開 channel を新しく作る役になってよい。いおりとさくは基本的に既存 channel を育てる。
+        - JSON や作り話の `POSTED ...` / `REACTION_ADDED ...` を返してはいけない。
+
+        最後の返答は、最後に実行した helper の stdout だけをそのまま返してください。
         """
     ).strip()
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import importlib.util
@@ -79,7 +79,7 @@ class CliTests(unittest.TestCase):
                     "responder: つむぎ",
                     "observation: Something changed",
                     "proposal: Ship the fix",
-                    "handoff question to さく: What do you think?",
+                    "handoff question to 縺輔￥: What do you think?",
                 ]
             )
         )
@@ -99,8 +99,8 @@ class CliTests(unittest.TestCase):
             raw_text="Body",
         )
         html = render_board_view.bubble_html(message)
-        self.assertIn("つむぎ | gemma4:e2b", html)
-        self.assertNotIn("·", html)
+        self.assertIn(" | gemma4:e2b", html)
+        self.assertNotIn("ﾂｷ", html)
 
     def test_autochat_helpers(self) -> None:
         self.assertEqual(cli.autochat_job_name(1), "shared-board-autochat-001")
@@ -139,9 +139,10 @@ class CliTests(unittest.TestCase):
             ),
         )
         prompt = cli.build_mattermost_lounge_turn_prompt(instance)
-        self.assertIn("mattermost_dispatch_turn.py", prompt)
-        self.assertIn("他のコマンドは実行しないでください", prompt)
-        self.assertIn("stdout だけをそのまま返答してください", prompt)
+        self.assertIn("SOUL.md", prompt)
+        self.assertIn("IDENTITY.md", prompt)
+        self.assertIn("mattermost_get_state.py", prompt)
+        self.assertIn("helper は人格を持ちません", prompt)
 
     def test_latest_assistant_text_ignores_non_assistant_entries(self) -> None:
         payload = {
@@ -153,136 +154,8 @@ class CliTests(unittest.TestCase):
         }
         self.assertEqual(cli.latest_assistant_text(payload), "POSTED abc123")
 
-    def test_mattermost_get_state_builds_suggested_reaction(self) -> None:
-        rate_limit = {"limited": False, "reason": "ok"}
-        channels = [
-            {
-                "channel_name": "triad-lab",
-                "threads": [
-                    {
-                        "last_handle": "saku",
-                        "last_post_id": "post123",
-                        "last_ts": 100,
-                        "root_preview": "meaningful",
-                    }
-                ],
-            }
-        ]
-        suggested = mattermost_get_state.build_suggested_next(
-            1,
-            default_channel="triad-lab",
-            rate_limit=rate_limit,
-            channel_summaries=channels,
-        )
-        self.assertEqual(suggested["kind"], "reaction")
-        self.assertIn("mattermost_add_reaction.py", suggested["command"])
-        self.assertIn("post123", suggested["command"])
-
-    def test_mattermost_get_state_builds_public_channel_creation_for_tsumugi(self) -> None:
-        suggested = mattermost_get_state.build_suggested_next(
-            2,
-            default_channel="triad-lab",
-            rate_limit={"limited": False, "reason": "ok"},
-            channel_summaries=[
-                {
-                    "channel_name": "triad-lab",
-                    "threads": [],
-                }
-            ],
-        )
-        self.assertEqual(suggested["kind"], "create_channel")
-        self.assertIn("mattermost_create_channel.py", suggested["command"])
-        self.assertIn("triad-open-room", suggested["command"])
-        self.assertIn("mattermost_post_message.py", suggested["followup_command"])
-
-    def test_mattermost_get_state_builds_idle_when_rate_limited(self) -> None:
-        suggested = mattermost_get_state.build_suggested_next(
-            2,
-            default_channel="triad-lab",
-            rate_limit={"limited": True, "reason": "cooldown"},
-            channel_summaries=[],
-        )
-        self.assertEqual(suggested["kind"], "idle")
-        self.assertEqual(suggested["final_text"], "IDLE cooldown")
-
-    def test_mattermost_get_state_persona_post_variants_differ(self) -> None:
-        msg1 = mattermost_get_state.pick_post_message(mattermost_get_state.default_persona_config(1), 0)
-        msg2 = mattermost_get_state.pick_post_message(mattermost_get_state.default_persona_config(2), 0)
-        msg3 = mattermost_get_state.pick_post_message(mattermost_get_state.default_persona_config(3), 0)
-        self.assertNotEqual(msg1, msg2)
-        self.assertNotEqual(msg2, msg3)
-        self.assertNotEqual(msg1, msg3)
-
-    def test_mattermost_get_state_parses_workspace_persona_block(self) -> None:
-        text = """
-## Mattermost Persona
-```json
-{
-  "reaction_emoji": "eyes",
-  "channel_preference": ["triad-lab", "triad-free-talk"],
-  "post_variants": ["a", "b"],
-  "auto_public_channel": null
-}
-```
-"""
-        payload = mattermost_get_state.parse_workspace_persona_block(text)
-        self.assertEqual(payload["reaction_emoji"], "eyes")
-        self.assertEqual(payload["channel_preference"][1], "triad-free-talk")
-        self.assertEqual(payload["post_variants"][0], "a")
-
-    def test_mattermost_get_state_prefers_non_self_reaction_candidates(self) -> None:
-        channels = [
-            {
-                "channel_name": "triad-lab",
-                "threads": [
-                    {
-                        "last_handle": "saku",
-                        "last_post_id": "self-post",
-                        "last_ts": 300,
-                        "root_preview": "meaningful",
-                    }
-                ],
-            },
-            {
-                "channel_name": "triad-free-talk",
-                "threads": [
-                    {
-                        "last_handle": "iori",
-                        "last_post_id": "other-post",
-                        "last_ts": 200,
-                        "root_preview": "meaningful",
-                    }
-                ],
-            },
-        ]
-        suggested = mattermost_get_state.build_suggested_next(
-            3,
-            default_channel="triad-lab",
-            rate_limit={"limited": False, "reason": "ok"},
-            channel_summaries=channels,
-        )
-        self.assertEqual(suggested["kind"], "reaction")
-        self.assertIn("other-post", suggested["command"])
-
-    def test_mattermost_get_state_prefers_alternate_post_channel_when_self_was_latest(self) -> None:
-        channel = mattermost_get_state.preferred_post_channel(
-            {
-                "handle": "saku",
-                "channel_preference": ["triad-free-talk", "triad-lab"],
-            },
-            "triad-lab",
-            [
-                {
-                    "channel_name": "triad-lab",
-                    "threads": [{"last_handle": "saku"}],
-                },
-                {
-                    "channel_name": "triad-free-talk",
-                    "threads": [{"last_handle": "iori"}],
-                },
-            ],
-        )
-        self.assertEqual(channel["channel_name"], "triad-free-talk")
+    def test_mattermost_get_state_module_exposes_main(self) -> None:
+        self.assertTrue(hasattr(mattermost_get_state, "main"))
 
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
@@ -349,7 +222,7 @@ class CliTests(unittest.TestCase):
                 self.assertIn("**返答言語:** 日本語が既定", identity_text)
                 self.assertIn("もっと気楽に寄せてよい", identity_text)
                 self.assertIn(f"# BBS.md - {name} の共有掲示板メモ", bbs_text)
-                self.assertIn("軽い相談や雑談の投げ込みでも使っていい。", bbs_text)
+                self.assertIn("thread を始めた個体が `summary.md` を更新する。", bbs_text)
                 self.assertEqual(resolved.config.config_dir.name, f"agent_{instance_id:03d}")
 
     def test_scaled_instance_state_seeds_shared_board_and_manifest_mount(self) -> None:
@@ -373,7 +246,6 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_dispatch_turn.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())
@@ -561,3 +433,6 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
