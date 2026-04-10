@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # openclaw-podman-multi-pod-starter
 
@@ -92,13 +92,6 @@ Each instance gets its own:
 
 under `.openclaw/instances/<agent_id>/`.
 
-All scaled instances also share:
-
-- `.openclaw/instances/shared-board/`
-
-That directory is mounted inside every scaled pod at `/home/node/.openclaw/shared-board`.
-Each scaled instance also gets a separate board pod that exposes the shared board as a minimal web BBS with a pod-local SQLite cache and REST API.
-
 Scaled instance directories use stable agent ids such as:
 
 - `.openclaw/instances/agent_001`
@@ -112,39 +105,11 @@ Gemma4 triad persona seeding:
 - Instance 3 / `さく`: verification sentinel for tests, diffs, and risk checks
 
 `init --count 3` also seeds each workspace with managed `SOUL.md`, `IDENTITY.md`,
-`HEARTBEAT.md`, `BOOTSTRAP.md`, `USER.md`, `TOOLS.md`, and `BBS.md`.
+`HEARTBEAT.md`, `BOOTSTRAP.md`, `USER.md`, and `TOOLS.md`.
 Legacy stock templates are upgraded automatically, and managed scaffold files are refreshed on re-init.
 
-The shared board starter includes:
-
-- `shared-board/README.md` with posting rules
-- `shared-board/threads/` for per-topic async discussions
-- `shared-board/archive/` for resolved threads
-- `shared-board/templates/` for topic / reply / summary skeletons
-- `shared-board/tools/shared_board_service.py` for the board pod API server
-- `shared-board/tools/shared_board_app.html` for the browser UI shell
-
-`BBS.md` tells each Gemma4 instance when to open a thread, how to reply without clobbering sibling posts, and how to close a discussion with a summary.
-
-Board pod defaults:
-
-- Instance 1 board: `http://127.0.0.1:18889/`
-- Instance 2 board: `http://127.0.0.1:18891/`
-- Instance 3 board: `http://127.0.0.1:18893/`
-
-Each pod keeps its own SQLite cache at:
-
-- `.openclaw/instances/agent_001/board-cache/shared-board.sqlite3`
-- `.openclaw/instances/agent_002/board-cache/shared-board.sqlite3`
-- `.openclaw/instances/agent_003/board-cache/shared-board.sqlite3`
-
-The board pod exposes:
-
-- `GET /healthz`
-- `GET /api/threads`
-- `GET /api/threads/<thread-id>`
-- `POST /api/threads`
-- `POST /api/threads/<thread-id>/posts`
+Each scaled instance also gets a managed `mattermost-tools/` directory under its `.openclaw` state.
+Those scripts are available inside the pod at `/home/node/.openclaw/mattermost-tools` and are used only for Mattermost lounge turns.
 
 ## 💬 Mattermost Lab
 
@@ -183,7 +148,7 @@ That mode creates pod-local jobs so `iori`, `tsumugi`, and `saku` can keep a lig
 
 Current execution model:
 
-- the regular lounge cron job runs `shared-board/tools/mattermost_workspace_turn.py`
+- the regular lounge cron job runs `mattermost-tools/mattermost_workspace_turn.py`
 - that runner reads the agent workspace `SOUL.md` and `IDENTITY.md` as the persona source of truth
 - helper scripts such as `mattermost_get_state.py`, `mattermost_post_message.py`, `mattermost_create_channel.py`, and `mattermost_add_reaction.py` are stateless tools only
 - `triad-lab` is the primary public conversation room
@@ -238,10 +203,6 @@ Those reports document:
 .\scripts\logs.ps1 -Follow
 .\scripts\stop.ps1 --remove
 .\scripts\print-env.ps1
-.\scripts\discuss.ps1 --topic "Gemma4 triad QA check"
-.\scripts\autochat.ps1 enable --count 3
-.\scripts\autochat.ps1 status --count 3
-.\scripts\boardview.ps1 --thread background-lounge --open
 .\scripts\mattermost.ps1 init
 .\scripts\mattermost.ps1 launch
 .\scripts\mattermost.ps1 seed --count 3
@@ -261,10 +222,6 @@ uv run openclaw-podman launch --count 3 --dry-run
 uv run openclaw-podman print-env --instance 2
 uv run openclaw-podman status --count 3
 uv run openclaw-podman stop --count 3 --remove --dry-run
-uv run openclaw-podman discuss --topic "Gemma4 triad QA check" --thread-id qa-smoke
-uv run openclaw-podman autochat enable --count 3
-uv run openclaw-podman autochat status --count 3
-uv run openclaw-podman boardview --thread background-lounge
 uv run openclaw-podman mattermost init
 uv run openclaw-podman mattermost launch
 uv run openclaw-podman mattermost seed --count 3
@@ -274,26 +231,11 @@ uv run openclaw-podman mattermost lounge status --count 3
 uv run openclaw-podman mattermost lounge run-now --count 3
 ```
 
-`discuss` runs `openclaw agent --local` inside each scaled pod, seeds one board thread, asks each Gemma4 instance to post its own reply, and finishes with a summary file.
-`autochat enable` installs pod-local OpenClaw cron jobs that keep `shared-board/threads/background-lounge/` moving in the background. The default cadence is a 6-minute ring:
-
-- minute 0: いおり
-- minute 2: つむぎ
-- minute 4: さく
-
-Human-readable viewer output is written automatically under:
-
-- `.openclaw/instances/shared-board/viewer/index.html`
-- `.openclaw/instances/shared-board/viewer/threads/background-lounge.html`
-
-Those files are regenerated on `init`, after `discuss`, and after each successful background autochat post, so a human can keep the thread open in a browser and refresh as new messages land.
-The static viewer remains available, but the board pod is now the main interactive path for human posting because it adds the missing database and API layer.
-
 Windows auto-recovery after reboot is wired through the current user's Startup folder:
 
 - `scripts/register-autostart.ps1` installs `OpenClawPodmanStarter-Autostart.cmd` into `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
 - that launcher runs `scripts/autostart.ps1`
-- `autostart.ps1` starts Podman Desktop first when it is installed, waits for the Podman machine, launches all 3 pods, checks autochat, and refreshes the live board viewer
+- `autostart.ps1` starts Podman Desktop first when it is installed, waits for the Podman machine, and launches all 3 pods
 
 This means the stack comes back automatically after Windows reboot once the user logs in.
 
@@ -329,3 +271,4 @@ The included GitHub Actions workflow validates:
 - [Podman kube play](https://docs.podman.io/en/latest/markdown/podman-kube-play.1.html)
 - [Podman kube down](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html)
 - [Ollama OpenClaw integration](https://docs.ollama.com/integrations/openclaw)
+

@@ -22,21 +22,16 @@ from urllib import request as urllib_request
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
-AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "autochat_turn.py"
 MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
 MATTERMOST_GET_STATE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_get_state.py"
 MATTERMOST_POST_MESSAGE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_post_message.py"
 MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_create_channel.py"
 MATTERMOST_ADD_REACTION_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_add_reaction.py"
 MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_workspace_turn.py"
-BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
-BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
-BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
 CONTAINER_CONFIG_DIR = "/home/node/.openclaw"
 CONTAINER_WORKSPACE_DIR = "/home/node/.openclaw/workspace"
-CONTAINER_SHARED_BOARD_DIR = "/home/node/.openclaw/shared-board"
-CONTAINER_BOARD_CACHE_DIR = f"{CONTAINER_CONFIG_DIR}/board-cache"
-CONTAINER_BOARD_DB_PATH = f"{CONTAINER_BOARD_CACHE_DIR}/shared-board.sqlite3"
+CONTAINER_MATTERMOST_TOOLS_DIR = f"{CONTAINER_CONFIG_DIR}/mattermost-tools"
+CONTAINER_SHARED_BOARD_DIR = CONTAINER_MATTERMOST_TOOLS_DIR
 STATE_ENV_NAME = ".env"
 DEFAULT_OLLAMA_MODEL_ID = "gemma4:e2b"
 DEFAULT_MODEL_REF = f"ollama/{DEFAULT_OLLAMA_MODEL_ID}"
@@ -62,10 +57,7 @@ MATTERMOST_MMCTL_BIN = "/mm/mattermost/bin/mmctl"
 MANAGED_LABEL_KEY = "io.openclaw-podman.managed"
 INSTANCE_LABEL_KEY = "io.openclaw-podman.instance"
 WORKSPACE_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: persona scaffold -->"
-BOARD_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: shared board scaffold -->"
-DEFAULT_DISCUSSION_INSTANCE_COUNT = 3
-AUTOCHAT_THREAD_ID = "background-lounge"
-AUTOCHAT_JOB_PREFIX = "shared-board-autochat"
+MATTERMOST_TOOLS_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: mattermost lounge scripts -->"
 MATTERMOST_LOUNGE_JOB_PREFIX = "mattermost-lounge-autochat"
 MATTERMOST_ADMIN_PASSWORD_KEY = "OPENCLAW_MATTERMOST_ADMIN_PASSWORD"
 MATTERMOST_OPERATOR_PASSWORD_KEY = "OPENCLAW_MATTERMOST_OPERATOR_PASSWORD"
@@ -361,7 +353,7 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
     model_ref = model_ref_for(cfg)
     workspace_path = cfg.workspace_dir.resolve()
     config_path = cfg.config_dir.resolve()
-    board_host_path = shared_board_root(instance).resolve()
+    board_host_path = cfg.config_dir.resolve()
     pod_name = instance.pod_name
     container_name = instance.container_name
     trio_size = max(3, instance.instance_id)
@@ -566,8 +558,7 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
         - Bridge: `{bridge_url}`
         - Workspace: `{workspace_path}`
         - Config dir: `{config_path}`
-        - Shared board (container): `{CONTAINER_SHARED_BOARD_DIR}`
-        - Shared board (host): `{board_host_path}`
+        - Mattermost lounge scripts: `{CONTAINER_MATTERMOST_TOOLS_DIR}`
 
         ## 実務メモ
 
@@ -625,7 +616,6 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
         "BOOTSTRAP.md": bootstrap.strip() + "\n",
         "USER.md": user.strip() + "\n",
         "TOOLS.md": tools.strip() + "\n",
-        "BBS.md": bbs.strip() + "\n",
     }
 
 
@@ -635,162 +625,49 @@ def scaffold_workspace_files(instance: ScaledInstance) -> None:
         path = instance.config.workspace_dir / filename
         if should_write_workspace_file(path, filename):
             path.write_text(content, encoding="utf-8")
+    stale_bbs = instance.config.workspace_dir / "BBS.md"
+    if stale_bbs.exists():
+        stale_bbs.unlink()
 
 
-def shared_board_root(instance: ScaledInstance) -> Path:
-    return instance.config.config_dir.parent / "shared-board"
+def mattermost_tools_root(instance: ScaledInstance) -> Path:
+    return instance.config.config_dir / "mattermost-tools"
 
 
-def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
-    board_root = shared_board_root(instance)
-    autochat_script = AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+def render_mattermost_tool_files(instance: ScaledInstance) -> dict[Path, str]:
+    tools_root = mattermost_tools_root(instance)
     mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_get_state_script = MATTERMOST_GET_STATE_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_post_message_script = MATTERMOST_POST_MESSAGE_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_create_channel_script = MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_add_reaction_script = MATTERMOST_ADD_REACTION_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_workspace_turn_script = MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE.read_text(encoding="utf-8")
-    render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
-    board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
-    board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
-
     readme = dedent(
         f"""\
-        {BOARD_MANAGED_MARKER}
-        # Shared Board
+        {MATTERMOST_TOOLS_MANAGED_MARKER}
+        # Mattermost Lounge Scripts
 
-        This directory is mounted into every scaled OpenClaw pod at `{CONTAINER_SHARED_BOARD_DIR}`.
-        Use it as a lightweight async board for いおり, つむぎ, さく, and any additional scaled shards.
-
-        ## Layout
-
-        - `threads/<thread-id>/topic.md`
-        - `threads/<thread-id>/reply-<agent>-<timestamp>.md`
-        - `threads/<thread-id>/summary.md`
-        - `archive/`
-        - `templates/`
-        - `tools/shared_board_service.py`
-        - `tools/shared_board_app.html`
-
-        ## Rules
-
-        - Create one file per reply to avoid write collisions.
-        - Do not rewrite another agent's reply file.
-        - The thread starter owns `summary.md`.
-        - Include the repo, exact target, current evidence, and a concrete ask in every topic.
-        - Mark resolved threads in `summary.md`, then archive them when convenient.
-
-        ## Pod-local BBS
-
-        Each scaled instance also gets a dedicated board pod that:
-
-        - syncs this directory into a pod-local SQLite cache
-        - serves a minimal browser UI
-        - exposes REST endpoints at `/api/threads`, `/api/threads/<thread-id>`, and `/healthz`
+        These files are copied into `{CONTAINER_MATTERMOST_TOOLS_DIR}` inside each scaled OpenClaw pod.
+        The lounge runner reads workspace persona files and the helpers only execute Mattermost API actions.
         """
     )
-
-    topic_template = dedent(
-        f"""\
-        {BOARD_MANAGED_MARKER}
-        # Topic
-
-        - Thread id:
-        - Started by:
-        - Repo:
-        - Target files or commands:
-        - Current evidence:
-        - Question for siblings:
-        - Desired outcome:
-        """
-    )
-
-    reply_template = dedent(
-        f"""\
-        {BOARD_MANAGED_MARKER}
-        # Reply
-
-        - Responder:
-        - Take:
-        - Evidence:
-        - Risks:
-        - Recommendation:
-        """
-    )
-
-    summary_template = dedent(
-        f"""\
-        {BOARD_MANAGED_MARKER}
-        # Summary
-
-        - Status: open
-        - Decider:
-        - Final direction:
-        - Follow-up:
-        """
-    )
-
     return {
-        board_root / "README.md": readme.strip() + "\n",
-        board_root / "templates" / "topic-template.md": topic_template.strip() + "\n",
-        board_root / "templates" / "reply-template.md": reply_template.strip() + "\n",
-        board_root / "templates" / "summary-template.md": summary_template.strip() + "\n",
-        board_root / "tools" / "autochat_turn.py": autochat_script if autochat_script.endswith("\n") else autochat_script + "\n",
-        board_root / "tools" / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
-        board_root / "tools" / "mattermost_get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
-        board_root / "tools" / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
-        board_root / "tools" / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
-        board_root / "tools" / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
-        board_root / "tools" / "mattermost_workspace_turn.py": mattermost_workspace_turn_script if mattermost_workspace_turn_script.endswith("\n") else mattermost_workspace_turn_script + "\n",
-        board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
-        board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
-        board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
+        tools_root / "README.md": readme.strip() + "\n",
+        tools_root / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
+        tools_root / "mattermost_get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
+        tools_root / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
+        tools_root / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
+        tools_root / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
+        tools_root / "mattermost_workspace_turn.py": mattermost_workspace_turn_script if mattermost_workspace_turn_script.endswith("\n") else mattermost_workspace_turn_script + "\n",
     }
 
 
-def scaffold_shared_board(instance: ScaledInstance) -> None:
-    board_root = shared_board_root(instance)
-    for directory in (board_root / "threads", board_root / "archive", board_root / "templates", board_root / "tools"):
-        directory.mkdir(parents=True, exist_ok=True)
-
-    for path, content in render_shared_board_files(instance).items():
+def scaffold_mattermost_tools(instance: ScaledInstance) -> None:
+    tools_root = mattermost_tools_root(instance)
+    tools_root.mkdir(parents=True, exist_ok=True)
+    for path, content in render_mattermost_tool_files(instance).items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.name in {
-            "autochat_turn.py",
-            "mattermost_autochat_turn.py",
-            "mattermost_get_state.py",
-            "mattermost_post_message.py",
-            "mattermost_create_channel.py",
-            "mattermost_add_reaction.py",
-            "mattermost_workspace_turn.py",
-            "render_board_view.py",
-            "shared_board_service.py",
-            "shared_board_app.html",
-        } or should_write_managed_file(path, BOARD_MANAGED_MARKER):
-            path.write_text(content, encoding="utf-8")
-    stale_dispatch = board_root / "tools" / "mattermost_dispatch_turn.py"
-    if stale_dispatch.exists():
-        stale_dispatch.unlink()
-
-
-def render_board_view(board_root: Path) -> Path:
-    viewer_index = board_root / "viewer" / "index.html"
-    command = [sys.executable, str(BOARD_RENDER_SCRIPT_FILE), "--board-root", str(board_root)]
-    completed = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    if completed.returncode != 0:
-        raise SystemExit(
-            "board viewer render failed\n"
-            f"command: {' '.join(command)}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
-        )
-    return viewer_index
+        path.write_text(content, encoding="utf-8")
 
 
 def slugify_thread_id(value: str) -> str:
@@ -1205,7 +1082,7 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
 
 
 def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
-    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_workspace_turn.py"
+    script_path = f"{CONTAINER_MATTERMOST_TOOLS_DIR}/mattermost_workspace_turn.py"
     return dedent(
         f"""\
         exec ツールで次のコマンドだけを正確に実行してください。他のコマンドは実行しないでください。
@@ -2056,7 +1933,6 @@ def ensure_scaled_instance_state(instance: ScaledInstance) -> ScaledInstance:
     )
     cfg = ensure_state(load_config(instance.config.env_file))
     ensure_kube_manifest(cfg, pod_name=instance.pod_name, instance_label=str(instance.instance_id))
-    ensure_board_kube_manifest(cfg, pod_name=board_pod_name_for_config(cfg), instance_label=str(instance.instance_id))
     resolved = ScaledInstance(
         instance_id=instance.instance_id,
         pod_name=instance.pod_name,
@@ -2064,8 +1940,7 @@ def ensure_scaled_instance_state(instance: ScaledInstance) -> ScaledInstance:
         config=cfg,
     )
     scaffold_workspace_files(resolved)
-    scaffold_shared_board(resolved)
-    render_board_view(shared_board_root(resolved))
+    scaffold_mattermost_tools(resolved)
     return resolved
 
 
@@ -2073,9 +1948,8 @@ def print_scaled_instance_summary(instance: ScaledInstance) -> None:
     cfg = instance.config
     print(f"[instance {instance.instance_id}] pod={instance.pod_name} container={instance.container_name}")
     print(f"  gateway=http://{cfg.publish_host}:{cfg.gateway_port}/ bridge={cfg.publish_host}:{cfg.bridge_port}")
-    print(f"  board-pod={board_pod_name_for_config(cfg)} board={board_url_for_config(cfg)}")
     print(f"  state={cfg.config_dir}")
-    print(f"  shared-board={shared_board_root(instance)}")
+    print(f"  mattermost-tools={mattermost_tools_root(instance)}")
 
 
 def has_scaled_selection(args: argparse.Namespace) -> bool:
@@ -2132,26 +2006,7 @@ def shared_board_mounts(cfg: Config, instance_label: str) -> tuple[list[dict[str
             },
         }
     ]
-
-    board_root = shared_board_root_for_config(cfg, instance_label)
-    if board_root is not None:
-        volume_mounts.append(
-            {
-                "name": "shared-board",
-                "mountPath": CONTAINER_SHARED_BOARD_DIR,
-            }
-        )
-        volumes.append(
-            {
-                "name": "shared-board",
-                "hostPath": {
-                    "path": podman_host_path(board_root),
-                    "type": "DirectoryOrCreate",
-                },
-            }
-        )
-
-    return volume_mounts, volumes, board_root
+    return volume_mounts, volumes, None
 
 
 def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[str, object]:
@@ -2356,7 +2211,7 @@ def mattermost_host_url(cfg: MattermostConfig) -> str:
 
 
 def mattermost_lounge_root(env_file: Path) -> Path:
-    return shared_board_root(scaled_instance(env_file, 1)) / "mattermost-lounge"
+    return env_file.resolve().parent / ".openclaw" / "mattermost-lounge"
 
 
 def mattermost_lounge_state_path(env_file: Path) -> Path:
@@ -3359,28 +3214,17 @@ def cmd_launch(args: argparse.Namespace) -> int:
                 instance_label=str(instance.instance_id),
                 ensure_manifest=not args.dry_run,
             )
-            board_play_command = build_board_kube_play_command(
-                instance.config,
-                pod_name=board_pod_name_for_config(instance.config),
-                instance_label=str(instance.instance_id),
-                ensure_manifest=not args.dry_run,
-            )
             print_scaled_instance_summary(instance)
             print(command_for_display(play_command))
-            print(command_for_display(board_play_command))
 
             if args.dry_run:
                 continue
 
             play_exit = run_process(play_command, check=False)
-            board_play_exit = run_process(board_play_command, check=False)
             if play_exit != 0:
                 overall = play_exit
-            if board_play_exit != 0:
-                overall = board_play_exit
-            if play_exit == 0 and board_play_exit == 0:
+            if play_exit == 0:
                 print(f"[ok] instance {instance.instance_id} reachable at http://{instance.config.publish_host}:{instance.config.gateway_port}/")
-                print(f"[ok] instance {instance.instance_id} board at {board_url_for_config(instance.config)}")
         return overall
 
     ensure_env_file(args.env_file)
@@ -3421,13 +3265,6 @@ def cmd_status(args: argparse.Namespace) -> int:
                 text=True,
                 encoding="utf-8",
             )
-            board_pod_result = subprocess.run(
-                [podman_bin(), "pod", "ps", "--noheading", "--filter", f"name={board_pod_name_for_config(instance.config)}", "--format", "{{.Name}}|{{.Status}}"],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
             container_result = subprocess.run(
                 [podman_bin(), "ps", "-a", "--noheading", "--filter", f"name={instance.container_name}", "--format", "{{.Names}}|{{.Status}}"],
                 check=False,
@@ -3435,21 +3272,10 @@ def cmd_status(args: argparse.Namespace) -> int:
                 text=True,
                 encoding="utf-8",
             )
-            board_result = subprocess.run(
-                [podman_bin(), "ps", "-a", "--noheading", "--filter", f"name={board_container_name(instance.container_name)}", "--format", "{{.Names}}|{{.Status}}"],
-                check=False,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
             pod_line = pod_result.stdout.strip() or "missing|not-found"
-            board_pod_line = board_pod_result.stdout.strip() or "missing|not-found"
             container_line = container_result.stdout.strip() or "missing|not-found"
-            board_line = board_result.stdout.strip() or "missing|not-found"
             print(f"[instance {instance_id}] pod={pod_line} container={container_line}")
-            print(f"  board-pod={board_pod_line} board-container={board_line}")
-            print(f"  board-url={board_url_for_config(instance.config)}")
-            if "not-found" in pod_line or "not-found" in board_pod_line or "not-found" in container_line or "not-found" in board_line:
+            if "not-found" in pod_line or "not-found" in container_line:
                 overall = 1
         return overall
 
@@ -3499,17 +3325,12 @@ def cmd_stop(args: argparse.Namespace) -> int:
         for instance_id in selected_instance_ids(args.instance, args.count):
             instance = scaled_instance(args.env_file, instance_id)
             down_command = build_kube_down_command(instance.config)
-            board_down_command = build_board_kube_down_command(instance.config)
             print(f"[instance {instance_id}] {command_for_display(down_command)}")
-            print(f"[instance {instance_id}] {command_for_display(board_down_command)}")
             if args.dry_run:
                 continue
             down_exit = run_process(down_command, check=False)
-            board_down_exit = run_process(board_down_command, check=False)
             if down_exit != 0:
                 overall = down_exit
-            if board_down_exit != 0:
-                overall = board_down_exit
         return overall
 
     cfg = load_config(args.env_file)
@@ -3535,25 +3356,18 @@ def cmd_print_env(args: argparse.Namespace) -> int:
         print_kv("instance", str(instance.instance_id))
         print_kv("pod", instance.pod_name)
         print_kv("container", instance.container_name)
-        print_kv("board pod", board_pod_name_for_config(cfg))
-        print_kv("board container", board_container_name(cfg.container_name))
         print_kv("env file", str(cfg.env_file))
         print_kv("manifest", str(manifest_path_for_config(cfg)))
-        print_kv("board manifest", str(board_manifest_path_for_config(cfg)))
         print_kv("image", cfg.image)
         print_kv("publish host", cfg.publish_host)
         print_kv("gateway port", str(cfg.gateway_port))
         print_kv("bridge port", str(cfg.bridge_port))
-        print_kv("board port", str(cfg.board_port))
-        print_kv("board url", board_url_for_config(cfg))
         print_kv("config dir", str(cfg.config_dir))
         print_kv("workspace dir", str(cfg.workspace_dir))
-        print_kv("shared board dir", str(shared_board_root(instance)))
-        print_kv("board db", str(cfg.config_dir / "board-cache" / "shared-board.sqlite3"))
+        print_kv("mattermost tools dir", str(mattermost_tools_root(instance)))
         print_kv("ollama base url", cfg.ollama_base_url)
         print_kv("network", cfg.network)
         print_kv("default model", model_ref_for(cfg))
-        print_kv("board image", cfg.board_image)
         print_kv("tools profile", "full")
         print_kv("sandbox mode", "off")
         return 0
@@ -3852,37 +3666,6 @@ def build_parser() -> argparse.ArgumentParser:
     print_env_parser.add_argument("--instance", type=int, help="Print env for one scaled instance by id.")
     print_env_parser.set_defaults(func=cmd_print_env)
 
-    discuss_parser = subparsers.add_parser("discuss", help="Run a pod-local shared-board discussion across scaled instances.")
-    discuss_parser.add_argument("--topic", required=True, help="Discussion topic to seed into the shared board.")
-    discuss_parser.add_argument("--thread-id", help="Optional explicit thread id (letters, numbers, dashes).")
-    discuss_parser.add_argument("--count", type=int, help="Number of scaled instances to include (default: 3).")
-    discuss_parser.add_argument("--starter", type=int, default=1, help="Instance id that opens and closes the thread (default: 1).")
-    discuss_parser.add_argument("--timeout", type=int, default=180, help="Per-agent timeout in seconds (default: 180).")
-    discuss_parser.set_defaults(func=cmd_discuss)
-
-    autochat_parser = subparsers.add_parser("autochat", help="Manage always-on shared-board autochat jobs inside scaled pods.")
-    autochat_subparsers = autochat_parser.add_subparsers(dest="autochat_command", required=True)
-
-    autochat_enable_parser = autochat_subparsers.add_parser("enable", help="Create or replace pod-local cron jobs for always-on autochat.")
-    autochat_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (must be 3; default: 3).")
-    autochat_enable_parser.add_argument("--interval-minutes", type=int, default=2, help="Minute gap between speakers; full cycle is gap*3 (default: 2).")
-    autochat_enable_parser.add_argument("--timeout", type=int, default=180, help="Per-turn timeout seconds (default: 180).")
-    autochat_enable_parser.set_defaults(func=cmd_autochat_enable)
-
-    autochat_status_parser = autochat_subparsers.add_parser("status", help="Show pod-local autochat cron status.")
-    autochat_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (must be 3; default: 3).")
-    autochat_status_parser.set_defaults(func=cmd_autochat_status)
-
-    autochat_run_now_parser = autochat_subparsers.add_parser("run-now", help="Enqueue one immediate autochat turn for each pod-local job.")
-    autochat_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (must be 3; default: 3).")
-    autochat_run_now_parser.add_argument("--timeout-ms", type=int, default=180000, help="Cron run request timeout in ms (default: 180000).")
-    autochat_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before listing live-thread files (default: 10).")
-    autochat_run_now_parser.set_defaults(func=cmd_autochat_run_now)
-
-    autochat_disable_parser = autochat_subparsers.add_parser("disable", help="Remove pod-local autochat cron jobs.")
-    autochat_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
-    autochat_disable_parser.set_defaults(func=cmd_autochat_disable)
-
     mattermost_parser = subparsers.add_parser("mattermost", help="Manage a local Mattermost pod for OpenClaw channel testing.")
     mattermost_subparsers = mattermost_parser.add_subparsers(dest="mattermost_command", required=True)
 
@@ -3933,11 +3716,6 @@ def build_parser() -> argparse.ArgumentParser:
     mattermost_lounge_disable_parser = mattermost_lounge_subparsers.add_parser("disable", help="Remove pod-local Mattermost lounge cron jobs.")
     mattermost_lounge_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
     mattermost_lounge_disable_parser.set_defaults(func=cmd_mattermost_lounge_disable)
-
-    boardview_parser = subparsers.add_parser("boardview", help="Build a human-readable shared-board HTML viewer.")
-    boardview_parser.add_argument("--thread", help="Optional thread id to print/open directly.")
-    boardview_parser.add_argument("--open", action="store_true", help="Open the rendered HTML on Windows.")
-    boardview_parser.set_defaults(func=cmd_boardview)
 
     return parser
 

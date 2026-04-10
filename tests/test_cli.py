@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import importlib.util
@@ -16,21 +16,7 @@ from openclaw_podman_starter import cli
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-RENDER_BOARD_VIEW_PATH = Path(__file__).resolve().parents[1] / "scripts" / "render_board_view.py"
-render_board_view_spec = importlib.util.spec_from_file_location("render_board_view", RENDER_BOARD_VIEW_PATH)
-render_board_view = importlib.util.module_from_spec(render_board_view_spec)
-assert render_board_view_spec and render_board_view_spec.loader
-sys.modules[render_board_view_spec.name] = render_board_view
-render_board_view_spec.loader.exec_module(render_board_view)
-
-SHARED_BOARD_SERVICE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "shared_board_service.py"
-shared_board_service_spec = importlib.util.spec_from_file_location("shared_board_service", SHARED_BOARD_SERVICE_PATH)
-shared_board_service = importlib.util.module_from_spec(shared_board_service_spec)
-assert shared_board_service_spec and shared_board_service_spec.loader
-sys.modules[shared_board_service_spec.name] = shared_board_service
-shared_board_service_spec.loader.exec_module(shared_board_service)
-
-MATTERMOST_GET_STATE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "mattermost_get_state.py"
+MATTERMOST_GET_STATE_PATH = SCRIPTS_DIR / "mattermost_get_state.py"
 mattermost_get_state_spec = importlib.util.spec_from_file_location("mattermost_get_state", MATTERMOST_GET_STATE_PATH)
 mattermost_get_state = importlib.util.module_from_spec(mattermost_get_state_spec)
 assert mattermost_get_state_spec and mattermost_get_state_spec.loader
@@ -57,62 +43,6 @@ def write_env_file(path: Path) -> None:
 
 
 class CliTests(unittest.TestCase):
-    def test_render_board_view_formats_key_value_lines(self) -> None:
-        html = render_board_view.markdown_to_html(
-            "\n".join(
-                [
-                    "responder: つむぎ",
-                    "observation: Something changed",
-                    "proposal: Ship the fix",
-                ]
-            )
-        )
-        self.assertIn('<dl class="kv-list">', html)
-        self.assertIn("<dt>responder</dt>", html)
-        self.assertIn("<dd>つむぎ</dd>", html)
-        self.assertIn("<dt>proposal</dt>", html)
-
-    def test_render_board_view_structures_chat_like_cards(self) -> None:
-        html = render_board_view.structured_chat_html(
-            "\n".join(
-                [
-                    "responder: つむぎ",
-                    "observation: Something changed",
-                    "proposal: Ship the fix",
-                    "handoff question to 縺輔￥: What do you think?",
-                ]
-            )
-        )
-        assert html is not None
-        self.assertIn('class="chat-card"', html)
-        self.assertIn("Just noticed", html)
-        self.assertIn("Thinking", html)
-        self.assertIn("Throwing it over", html)
-
-    def test_render_board_view_uses_ascii_separator_in_header(self) -> None:
-        message = render_board_view.ThreadMessage(
-            path=Path("turn-lyra.md"),
-            kind="turn",
-            speaker="lyra",
-            timestamp_label="2026-04-08 22:28:59",
-            html_body="<p>Body</p>",
-            raw_text="Body",
-        )
-        html = render_board_view.bubble_html(message)
-        self.assertIn(" | gemma4:e2b", html)
-        self.assertNotIn("ﾂｷ", html)
-
-    def test_autochat_helpers(self) -> None:
-        self.assertEqual(cli.autochat_job_name(1), "shared-board-autochat-001")
-        self.assertEqual(cli.autochat_cron_expression(1, 2), "5 0-59/6 * * * *")
-        self.assertEqual(cli.autochat_cron_expression(2, 2), "5 2-59/6 * * * *")
-        self.assertEqual(cli.autochat_cron_expression(3, 2), "5 4-59/6 * * * *")
-        self.assertEqual(cli.previous_speaker(1), "noctis")
-        self.assertEqual(cli.previous_speaker(2), "aster")
-        self.assertEqual(cli.previous_speaker(3), "lyra")
-        self.assertEqual(cli.mattermost_lounge_job_name(1), "mattermost-lounge-autochat-001")
-        self.assertEqual(cli.mattermost_lounge_agent_id(2), "mattermost-lounge-tsumugi")
-
     def test_mattermost_lounge_prompt_mentions_action_scripts(self) -> None:
         instance = cli.ScaledInstance(
             instance_id=1,
@@ -140,6 +70,7 @@ class CliTests(unittest.TestCase):
         )
         prompt = cli.build_mattermost_lounge_turn_prompt(instance)
         self.assertIn("mattermost_workspace_turn.py", prompt)
+        self.assertIn(cli.CONTAINER_MATTERMOST_TOOLS_DIR, prompt)
         self.assertIn("workspace の `SOUL.md` / `IDENTITY.md` を source of truth", prompt)
         self.assertIn("stdout だけをそのまま返答してください", prompt)
 
@@ -156,46 +87,7 @@ class CliTests(unittest.TestCase):
     def test_mattermost_get_state_module_exposes_main(self) -> None:
         self.assertTrue(hasattr(mattermost_get_state, "main"))
 
-    def test_discussion_thread_helpers(self) -> None:
-        thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
-        self.assertEqual(thread_id, "gemma4-board-qa-smoke")
-
-        thread = cli.discussion_thread(Path("D:/tmp/shared-board"), "qa-thread")
-        reply_path = cli.discussion_reply_path(
-            thread,
-            cli.ScaledInstance(
-                instance_id=2,
-                pod_name="openclaw-2-pod",
-                container_name="openclaw-2",
-                config=cli.Config(
-                    env_file=Path("D:/tmp/.env"),
-                    container_name="openclaw-2",
-                    image="image",
-                    gateway_port=18791,
-                    bridge_port=18792,
-                    board_port=18891,
-                    publish_host="127.0.0.1",
-                    network="podman",
-                    gateway_bind="lan",
-                    userns="keep-id",
-                    config_dir=Path("D:/tmp/instances/agent_002"),
-                    workspace_dir=Path("D:/tmp/instances/agent_002/workspace"),
-                    gateway_token="token",
-                    ollama_base_url="http://127.0.0.1:11434",
-                    ollama_model="gemma4:e2b",
-                    board_image="python:3.11-slim",
-                    raw_env={},
-                ),
-            ),
-            "20260408T000000Z",
-        )
-
-        self.assertEqual(thread.thread_dir, Path("D:/tmp/shared-board/threads/qa-thread"))
-        self.assertEqual(thread.topic_path, Path("D:/tmp/shared-board/threads/qa-thread/topic.md"))
-        self.assertEqual(thread.summary_path, Path("D:/tmp/shared-board/threads/qa-thread/summary.md"))
-        self.assertEqual(reply_path, Path("D:/tmp/shared-board/threads/qa-thread/reply-lyra-20260408T000000Z.md"))
-
-    def test_scaled_instance_state_seeds_triads(self) -> None:
+    def test_scaled_instance_state_seeds_triads_and_mattermost_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
             env_file = temp_root / ".env"
@@ -206,134 +98,46 @@ class CliTests(unittest.TestCase):
                 resolved = cli.ensure_scaled_instance_state(cli.scaled_instance(env_file, instance_id))
                 soul_path = resolved.config.workspace_dir / "SOUL.md"
                 identity_path = resolved.config.workspace_dir / "IDENTITY.md"
-                bbs_path = resolved.config.workspace_dir / "BBS.md"
-                soul_text = soul_path.read_text(encoding="utf-8")
-                identity_text = identity_path.read_text(encoding="utf-8")
-                bbs_text = bbs_path.read_text(encoding="utf-8")
+                tools_path = resolved.config.workspace_dir / "TOOLS.md"
+                mattermost_tools = cli.mattermost_tools_root(resolved)
+
                 self.assertTrue(soul_path.exists())
                 self.assertTrue(identity_path.exists())
-                self.assertTrue(bbs_path.exists())
-                self.assertIn(f"# SOUL.md - {name}", soul_text)
-                self.assertIn("- ユーザーが別言語を明示しない限り、日本語で返答する。", soul_text)
-                self.assertIn("- かしこまりすぎず、同じチームで話す感じでいく。", soul_text)
-                self.assertIn(cli.CONTAINER_SHARED_BOARD_DIR, soul_text)
-                self.assertIn(f"**名前:** {name}", identity_text)
-                self.assertIn("**返答言語:** 日本語が既定", identity_text)
-                self.assertIn("もっと気楽に寄せてよい", identity_text)
-                self.assertIn(f"# BBS.md - {name} の共有掲示板メモ", bbs_text)
-                self.assertIn("thread を始めた個体が `summary.md` を更新する。", bbs_text)
-                self.assertEqual(resolved.config.config_dir.name, f"agent_{instance_id:03d}")
+                self.assertTrue(tools_path.exists())
+                self.assertFalse((resolved.config.workspace_dir / "BBS.md").exists())
+                self.assertTrue((mattermost_tools / "mattermost_workspace_turn.py").exists())
+                self.assertTrue((mattermost_tools / "mattermost_get_state.py").exists())
+                self.assertTrue((mattermost_tools / "mattermost_post_message.py").exists())
+                self.assertTrue((mattermost_tools / "mattermost_create_channel.py").exists())
+                self.assertTrue((mattermost_tools / "mattermost_add_reaction.py").exists())
+                self.assertTrue((mattermost_tools / "mattermost_autochat_turn.py").exists())
 
-    def test_scaled_instance_state_seeds_shared_board_and_manifest_mount(self) -> None:
+                soul_text = soul_path.read_text(encoding="utf-8")
+                identity_text = identity_path.read_text(encoding="utf-8")
+                tools_text = tools_path.read_text(encoding="utf-8")
+
+                self.assertIn(f"# SOUL.md - {name}", soul_text)
+                self.assertIn(f"**名前:** {name}", identity_text)
+                self.assertIn(cli.CONTAINER_MATTERMOST_TOOLS_DIR, tools_text)
+
+    def test_scaled_instance_manifest_no_longer_mounts_shared_board(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
             env_file = temp_root / ".env"
             write_env_file(env_file)
 
             resolved = cli.ensure_scaled_instance_state(cli.scaled_instance(env_file, 2))
-            board_root = cli.shared_board_root(resolved)
             manifest = json.loads((resolved.config.config_dir / "pod.yaml").read_text(encoding="utf-8"))
-            board_manifest = json.loads((resolved.config.config_dir / "board-pod.yaml").read_text(encoding="utf-8"))
-
-            self.assertTrue((board_root / "README.md").exists())
-            self.assertTrue((board_root / "threads").exists())
-            self.assertTrue((board_root / "archive").exists())
-            self.assertTrue((board_root / "templates" / "topic-template.md").exists())
-            self.assertTrue((board_root / "tools" / "autochat_turn.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_autochat_turn.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_get_state.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
-            self.assertTrue((board_root / "tools" / "mattermost_workspace_turn.py").exists())
-            self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
-            self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
-            self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())
-            self.assertTrue((board_root / "viewer" / "index.html").exists())
-
-            main_containers = manifest["spec"]["containers"]
-            board_containers = board_manifest["spec"]["containers"]
-            volume_mounts = main_containers[0]["volumeMounts"]
+            containers = manifest["spec"]["containers"]
+            volume_mounts = containers[0]["volumeMounts"]
             volumes = manifest["spec"]["volumes"]
-            board_volumes = board_manifest["spec"]["volumes"]
-            self.assertIn(
-                {"name": "shared-board", "mountPath": cli.CONTAINER_SHARED_BOARD_DIR},
-                volume_mounts,
-            )
-            self.assertIn(
-                {
-                    "name": "shared-board",
-                    "hostPath": {
-                        "path": cli.podman_host_path(board_root),
-                        "type": "DirectoryOrCreate",
-                    },
-                },
-                volumes,
-            )
-            self.assertIn(
-                {
-                    "name": "shared-board",
-                    "hostPath": {
-                        "path": cli.podman_host_path(board_root),
-                        "type": "DirectoryOrCreate",
-                    },
-                },
-                board_volumes,
-            )
-            self.assertEqual(len(main_containers), 1)
-            self.assertEqual(main_containers[0]["name"], "openclaw-2")
-            self.assertEqual(board_manifest["metadata"]["name"], "openclaw-2-board-pod")
-            self.assertEqual(len(board_containers), 1)
-            self.assertEqual(board_containers[0]["name"], "openclaw-2-board")
-            self.assertEqual(board_containers[0]["image"], "python:3.11-slim")
-            self.assertEqual(board_containers[0]["ports"][0]["hostPort"], 18891)
-            self.assertEqual(
-                board_containers[0]["command"][:6],
-                [
-                    "python",
-                    f"{cli.CONTAINER_SHARED_BOARD_DIR}/tools/shared_board_service.py",
-                    "--board-root",
-                    cli.CONTAINER_SHARED_BOARD_DIR,
-                    "--db-path",
-                    cli.CONTAINER_BOARD_DB_PATH,
-                ],
-            )
 
-    def test_shared_board_service_syncs_threads_into_sqlite(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            temp_root = Path(tmp)
-            board_root = temp_root / "shared-board"
-            thread_dir = board_root / "threads" / "qa-thread"
-            thread_dir.mkdir(parents=True)
-
-            (thread_dir / "topic.md").write_text(
-                "# QA Thread\n\nStarted by: Operator\n\nCheck the board sidecar.\n",
-                encoding="utf-8",
-            )
-            (thread_dir / "reply-visitor-20260409T010203Z.md").write_text(
-                "Responder: Visitor\n\nLooks healthy.\n",
-                encoding="utf-8",
-            )
-
-            repo = shared_board_service.BoardRepository(board_root, temp_root / "cache" / "board.sqlite3")
-            repo.initialize()
-
-            listing = repo.list_threads()
-            self.assertEqual(len(listing["threads"]), 1)
-            self.assertEqual(listing["threads"][0]["threadId"], "qa-thread")
-            self.assertEqual(listing["threads"][0]["title"], "QA Thread")
-
-            detail = repo.get_thread("qa-thread")
-            self.assertEqual(len(detail["thread"]["posts"]), 2)
-            author_labels = {post["authorLabel"] for post in detail["thread"]["posts"]}
-            self.assertIn("Operator", author_labels)
-            self.assertIn("Visitor", author_labels)
-
-            created = repo.create_post("qa-thread", "Another reply from the browser.", "DeskUser")
-            self.assertEqual(created["thread"]["threadId"], "qa-thread")
-            self.assertEqual(len(created["thread"]["posts"]), 3)
-            reply_files = sorted(thread_dir.glob("reply-visitor-*.md"))
-            self.assertEqual(len(reply_files), 2)
+            self.assertEqual(len(containers), 1)
+            self.assertEqual(containers[0]["name"], "openclaw-2")
+            self.assertEqual(volume_mounts, [{"name": "openclaw-state", "mountPath": cli.CONTAINER_CONFIG_DIR}])
+            self.assertEqual(len(volumes), 1)
+            self.assertEqual(volumes[0]["name"], "openclaw-state")
+            self.assertFalse((resolved.config.config_dir / "board-pod.yaml").exists())
 
     def test_scaled_launch_dry_run_has_no_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -356,7 +160,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertRegex(output.getvalue().lower(), r"\bpodman(?:\.exe)? kube play\b")
             self.assertIn("--network", output.getvalue().lower())
-            self.assertIn("board-pod.yaml", output.getvalue().lower())
+            self.assertNotIn("board-pod.yaml", output.getvalue().lower())
             self.assertFalse((temp_root / "instances").exists())
 
     def test_mattermost_token_is_injected_into_scaled_instance(self) -> None:
@@ -433,6 +237,3 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

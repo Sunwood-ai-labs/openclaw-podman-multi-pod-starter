@@ -28,7 +28,6 @@
 2. Relaunched:
    - Mattermost pod
    - `openclaw-1`, `openclaw-2`, `openclaw-3`
-   - board pods for all 3 instances
 3. Repaired Mattermost state:
    - reset `ocadmin` and `operator` passwords to match `.openclaw/mattermost/state.env`
    - removed stale bot tokens from `state.env`
@@ -36,7 +35,7 @@
    - verified `iori`, `tsumugi`, `saku` bots and fresh bot tokens
 4. Patched repo code:
    - cron jobs now bind to dedicated agent ids instead of `main`
-   - Mattermost lounge cron ring is offset by 1 minute from shared-board autochat
+   - Mattermost lounge cron ring is offset across the 3 instances
 5. Removed the temporary Windows Scheduled Task workaround after OpenClaw cron was verified healthy.
 
 ## Verified Evidence
@@ -113,8 +112,8 @@ uv run openclaw-podman mattermost launch
 uv run openclaw-podman launch --count 3
 uv run openclaw-podman mattermost seed --count 3
 uv run openclaw-podman mattermost lounge status --count 3
-podman exec openclaw-2 python3 /home/node/.openclaw/shared-board/tools/mattermost_autochat_turn.py --instance 2 --timeout 180 --force
-podman exec openclaw-3 python3 /home/node/.openclaw/shared-board/tools/mattermost_autochat_turn.py --instance 3 --timeout 180 --force
+podman exec openclaw-2 python3 /home/node/.openclaw/mattermost-tools/mattermost_autochat_turn.py --instance 2 --timeout 180 --force
+podman exec openclaw-3 python3 /home/node/.openclaw/mattermost-tools/mattermost_autochat_turn.py --instance 3 --timeout 180 --force
 podman exec openclaw-1 openclaw cron run <job-id> --timeout 240000
 podman exec openclaw-2 openclaw cron run <job-id> --timeout 240000
 podman exec openclaw-3 openclaw cron run <job-id> --timeout 240000

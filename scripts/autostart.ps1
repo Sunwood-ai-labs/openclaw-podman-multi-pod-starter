@@ -118,18 +118,6 @@ Wait-Until -Label "podman machine running" -TimeoutSeconds 90 -Condition {
 
 Invoke-Step -Label "launch" -FilePath $uv -ArgumentList @("run", "--project", $repoRoot, "openclaw-podman", "launch", "--count", "$Count")
 
-$statusOutput = & $uv run --project $repoRoot openclaw-podman autochat status --count $Count 2>&1
-$statusExit = $LASTEXITCODE
-if ($statusOutput) {
-    $statusOutput | ForEach-Object { Write-Log "autochat status :: $_" }
-}
-if ($statusExit -ne 0) {
-    Write-Log "autochat status indicates missing jobs; enabling autochat"
-    Invoke-Step -Label "autochat-enable" -FilePath $uv -ArgumentList @("run", "--project", $repoRoot, "openclaw-podman", "autochat", "enable", "--count", "$Count")
-}
-
-Invoke-Step -Label "boardview" -FilePath $uv -ArgumentList @("run", "--project", $repoRoot, "openclaw-podman", "boardview", "--thread", "background-lounge")
-
 $finalStatus = & $uv run --project $repoRoot openclaw-podman status --count $Count 2>&1
 if ($finalStatus) {
     $finalStatus | ForEach-Object { Write-Log "final status :: $_" }

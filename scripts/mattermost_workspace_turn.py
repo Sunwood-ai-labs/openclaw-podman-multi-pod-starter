@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 
-TOOLS_DIR = "/home/node/.openclaw/shared-board/tools"
+TOOLS_DIR = "/home/node/.openclaw/mattermost-tools"
 WORKSPACE_SOUL_PATH = Path("/home/node/.openclaw/workspace/SOUL.md")
 
 DEFAULT_PERSONA = {

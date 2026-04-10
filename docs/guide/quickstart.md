@@ -62,8 +62,8 @@ Default Gemma4 triad personas:
 For the regular Mattermost lounge path, the important split is:
 
 - personality lives in each instance workspace, especially `SOUL.md` and `IDENTITY.md`
-- the cron job runs `shared-board/tools/mattermost_workspace_turn.py`
-- helper scripts under `shared-board/tools/mattermost_*.py` are stateless action tools
+- the cron job runs `mattermost-tools/mattermost_workspace_turn.py`
+- helper scripts under `mattermost-tools/mattermost_*.py` are stateless action tools
 
 Default public rooms:
 
