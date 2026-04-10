@@ -30,9 +30,9 @@ DISPLAY_NAMES = {
 }
 
 PERSONA_VIBES = {
-    1: "thoughtful, gentle, grounded",
-    2: "warm, playful, associative",
-    3: "dry, observant, cautious",
+    1: "思慮深く、やわらかく、地に足がついている",
+    2: "あたたかく、遊び心があり、連想が豊か",
+    3: "ドライで、観察眼があり、慎重",
 }
 
 FALLBACK_REPLY_VARIANTS = {
@@ -174,6 +174,8 @@ def load_control_values() -> dict[str, str]:
     return {
         "team_name": env.get("OPENCLAW_MATTERMOST_TEAM_NAME", "openclaw").strip() or "openclaw",
         "default_channel": env.get("OPENCLAW_MATTERMOST_CHANNEL_NAME", "triad-lab").strip() or "triad-lab",
+        "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": env.get("OPENCLAW_MATTERMOST_OPERATOR_USERNAME", "operator").strip() or "operator",
+        "OPENCLAW_MATTERMOST_ADMIN_USERNAME": env.get("OPENCLAW_MATTERMOST_ADMIN_USERNAME", "ocadmin").strip() or "ocadmin",
         "ollama_base_url": env.get("OPENCLAW_OLLAMA_BASE_URL", "http://host.containers.internal:11434").strip(),
         "ollama_model": env.get("OPENCLAW_OLLAMA_MODEL", "gemma4:e2b").strip() or "gemma4:e2b",
     }
@@ -423,6 +425,7 @@ def build_thread_summaries(posts: dict[str, object], order: list[str], bot_ids: 
             root_id,
             {
                 "root_post_id": root_id,
+                "last_post_id": "",
                 "last_ts": 0,
                 "last_handle": "",
                 "root_handle": "",
@@ -439,6 +442,7 @@ def build_thread_summaries(posts: dict[str, object], order: list[str], bot_ids: 
             participants.append(handle)
         if create_at >= int(bucket["last_ts"]):
             bucket["last_ts"] = create_at
+            bucket["last_post_id"] = post_id
             bucket["last_handle"] = handle
         if root_id == post_id and not bucket["root_preview"]:
             preview = str(post.get("message", "")).replace("\r\n", " ").strip()
@@ -511,25 +515,25 @@ def build_planner_prompt(instance_id: int, channel_summaries: list[dict[str, obj
     state_json = json.dumps(channel_summaries, ensure_ascii=False, indent=2)
     triad_channel_count = sum(1 for item in channel_summaries if str(item.get("channel_name", "")).startswith(CHANNEL_PREFIX))
     return (
-        f"You are @{handle} ({display_name}) planning one autonomous Mattermost action for this turn.\n"
-        f"Your conversational vibe is: {vibe}.\n"
-        + f"Default to posting in the existing Mattermost channel {default_channel!r}.\n"
-        + "Choose exactly one action from: new_thread, create_channel.\n"
-        + f"There are currently {triad_channel_count} triad-* channels. Do not create a new channel if that would exceed {MAX_TRIAD_CHANNELS}.\n"
-        + f"If you create a channel, its name must start with {CHANNEL_PREFIX!r} and use only lowercase ascii letters, numbers, and dashes.\n"
-        + "Use new_thread when you are continuing the same general topic in the main lounge. Use create_channel only when the topic clearly shifts enough that it deserves its own room.\n"
-        + "Do not use thread replies. Post as a normal top-level channel message.\n"
-        + "Your final message must be in natural Japanese, 2 or 3 short sentences, with no bullets, no markdown fences, and no @mentions.\n"
-        + "Return strict JSON only with this shape:\n"
+        f"あなたは @{handle} ({display_name}) です。このターンで行う Mattermost の自律アクションを 1 件だけ計画してください。\n"
+        f"会話の雰囲気は次のとおりです: {vibe}\n"
+        + f"基本は既存の Mattermost チャンネル {default_channel!r} に投稿してください。\n"
+        + "選べる action は new_thread または create_channel のどちらか 1 つだけです。\n"
+        + f"現在 triad-* チャンネルは {triad_channel_count} 個あります。{MAX_TRIAD_CHANNELS} 個を超えるなら新規チャンネルは作らないでください。\n"
+        + f"チャンネルを作る場合、名前は {CHANNEL_PREFIX!r} で始め、英小文字・数字・ハイフンだけを使ってください。\n"
+        + "メインラウンジの話題をそのまま続けるなら new_thread を使ってください。話題が明確に切り替わり、別部屋に分ける価値があるときだけ create_channel を使ってください。\n"
+        + "スレッド返信は使わず、通常のトップレベル投稿として送ってください。\n"
+        + "最終的な message は自然な日本語で、2 文か 3 文の短い文章にしてください。箇条書き、Markdown のコードフェンス、@mention は使わないでください。\n"
+        + "出力は次の形式の厳密な JSON のみを返してください:\n"
         + '{\n'
         + '  "action": "new_thread|create_channel",\n'
-        + '  "reason": "short english reason",\n'
+        + '  "reason": "short reason",\n'
         + '  "channel_name": "existing-or-new-channel-name",\n'
         + '  "display_name": "required only for create_channel",\n'
         + '  "purpose": "required only for create_channel",\n'
         + '  "message": "required"\n'
         + '}\n'
-        + "Real Mattermost state:\n"
+        + "以下が現在の Mattermost の実状態です:\n"
         + f"{state_json}\n"
     )
 

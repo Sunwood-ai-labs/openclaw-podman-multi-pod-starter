@@ -24,6 +24,11 @@ DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
 AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "autochat_turn.py"
 MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
+MATTERMOST_GET_STATE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_get_state.py"
+MATTERMOST_POST_MESSAGE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_post_message.py"
+MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_create_channel.py"
+MATTERMOST_ADD_REACTION_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_add_reaction.py"
+MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_workspace_turn.py"
 BOARD_RENDER_SCRIPT_FILE = REPO_ROOT / "scripts" / "render_board_view.py"
 BOARD_SERVICE_SCRIPT_FILE = REPO_ROOT / "scripts" / "shared_board_service.py"
 BOARD_APP_TEMPLATE_FILE = REPO_ROOT / "scripts" / "shared_board_app.html"
@@ -360,6 +365,43 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
     pod_name = instance.pod_name
     container_name = instance.container_name
     trio_size = max(3, instance.instance_id)
+    mattermost_persona = {
+        1: {
+            "reaction_emoji": "eyes",
+            "channel_preference": ["triad-lab", "triad-open-room", "triad-free-talk"],
+            "post_variants": [
+                "その視点は大事ですね。次の一歩を小さく試すなら、観測項目をひとつに絞ると見えやすくなりそうです。",
+                "急いで結論に寄せるより、前提をひとつ固定して見るほうが整理しやすそうです。まずは比較軸を一個に絞ってみませんか。",
+                "この論点は丁寧に扱いたいですね。次は条件を増やすより、どこを観測するかを先に決めたほうが進めやすいと思います。",
+            ],
+            "auto_public_channel": None,
+        },
+        2: {
+            "reaction_emoji": "sparkles",
+            "channel_preference": ["triad-open-room", "triad-lab", "triad-free-talk"],
+            "post_variants": [
+                "この話、まだ育てられそう。まずは小さく試して、どこで手応えが出るか見ていこう。",
+                "もう少しふくらませられそう。最初の一歩は軽くして、反応が返ってくる場所を先に見つけたいね。",
+                "このテーマ、うまく転がせば面白くなりそう。まずは試し方をひとつ決めて、そこから広げていこう。",
+            ],
+            "auto_public_channel": {
+                "channel_name": "triad-open-room",
+                "display_name": "Triad Open Room",
+                "purpose": "Public side room for emergent triad topics",
+                "message": "新しい公開チャンネルをひとつ用意しました。少し枝分かれした話題や試し書きは、ここで軽く育てていきましょう。",
+            },
+        },
+        3: {
+            "reaction_emoji": "thinking_face",
+            "channel_preference": ["triad-free-talk", "triad-open-room", "triad-lab"],
+            "post_variants": [
+                "まだ切り分けの余地がありますね。次は条件を一つだけ動かして、差分を見たほうが良さそうです。",
+                "観測点はまだ残っています。仮説を増やす前に、変数を一つだけ動かしてログを比較したほうが早いです。",
+                "ここは感触より差分で見たいですね。まず一条件だけ変えて、どこが本当に効いているかを確認したいです。",
+            ],
+            "auto_public_channel": None,
+        },
+    }[profile.instance_id]
 
     soul = "\n".join(
         [
@@ -399,6 +441,14 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
             "- 既存の memory file が stock scaffold から十分に育っているなら踏み荒らさない。",
             "- ユーザーが明示しない破壊的操作は避ける。",
             f"- {profile.caution}。",
+            "",
+            "## Mattermost Persona",
+            "",
+            "このブロックは Mattermost helper scripts の source of truth です。",
+            "cron のラウンジ投稿は、この JSON を読んで反応絵文字、投稿先の優先順、文体候補を決めます。",
+            "```json",
+            json.dumps(mattermost_persona, ensure_ascii=False, indent=2),
+            "```",
             "",
             "## 三体連携",
             "",
@@ -595,6 +645,11 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
     board_root = shared_board_root(instance)
     autochat_script = AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_get_state_script = MATTERMOST_GET_STATE_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_post_message_script = MATTERMOST_POST_MESSAGE_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_create_channel_script = MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_add_reaction_script = MATTERMOST_ADD_REACTION_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_workspace_turn_script = MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE.read_text(encoding="utf-8")
     render_script = BOARD_RENDER_SCRIPT_FILE.read_text(encoding="utf-8")
     board_service_script = BOARD_SERVICE_SCRIPT_FILE.read_text(encoding="utf-8")
     board_app_template = BOARD_APP_TEMPLATE_FILE.read_text(encoding="utf-8")
@@ -682,6 +737,11 @@ def render_shared_board_files(instance: ScaledInstance) -> dict[Path, str]:
         board_root / "templates" / "summary-template.md": summary_template.strip() + "\n",
         board_root / "tools" / "autochat_turn.py": autochat_script if autochat_script.endswith("\n") else autochat_script + "\n",
         board_root / "tools" / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
+        board_root / "tools" / "mattermost_get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
+        board_root / "tools" / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
+        board_root / "tools" / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
+        board_root / "tools" / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
+        board_root / "tools" / "mattermost_workspace_turn.py": mattermost_workspace_turn_script if mattermost_workspace_turn_script.endswith("\n") else mattermost_workspace_turn_script + "\n",
         board_root / "tools" / "render_board_view.py": render_script if render_script.endswith("\n") else render_script + "\n",
         board_root / "tools" / "shared_board_service.py": board_service_script if board_service_script.endswith("\n") else board_service_script + "\n",
         board_root / "tools" / "shared_board_app.html": board_app_template if board_app_template.endswith("\n") else board_app_template + "\n",
@@ -695,8 +755,22 @@ def scaffold_shared_board(instance: ScaledInstance) -> None:
 
     for path, content in render_shared_board_files(instance).items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.name in {"autochat_turn.py", "mattermost_autochat_turn.py", "render_board_view.py", "shared_board_service.py", "shared_board_app.html"} or should_write_managed_file(path, BOARD_MANAGED_MARKER):
+        if path.name in {
+            "autochat_turn.py",
+            "mattermost_autochat_turn.py",
+            "mattermost_get_state.py",
+            "mattermost_post_message.py",
+            "mattermost_create_channel.py",
+            "mattermost_add_reaction.py",
+            "mattermost_workspace_turn.py",
+            "render_board_view.py",
+            "shared_board_service.py",
+            "shared_board_app.html",
+        } or should_write_managed_file(path, BOARD_MANAGED_MARKER):
             path.write_text(content, encoding="utf-8")
+    stale_dispatch = board_root / "tools" / "mattermost_dispatch_turn.py"
+    if stale_dispatch.exists():
+        stale_dispatch.unlink()
 
 
 def render_board_view(board_root: Path) -> Path:
@@ -1131,13 +1205,15 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
 
 
 def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
-    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py"
+    script_path = f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_workspace_turn.py"
     return dedent(
         f"""\
-        Use the exec tool to run exactly this command and nothing else:
-        python3 {script_path} --instance {instance.instance_id} --timeout 180
+        exec ツールで次のコマンドだけを正確に実行してください。他のコマンドは実行しないでください。
+        `mattermost_workspace_turn.py` は workspace の `SOUL.md` / `IDENTITY.md` を source of truth として読み、
+        Mattermost helper を使って 1 ターンぶんの action を実行します。
+        python3 {script_path} --instance {instance.instance_id}
 
-        After the exec tool finishes, reply with exactly the stdout from that command.
+        実行が終わったら、そのコマンドの stdout だけをそのまま返答してください。
         """
     ).strip()
 
@@ -1454,26 +1530,36 @@ def run_mattermost_lounge_job_now(instance: ScaledInstance, timeout_ms: int = 18
 
 
 def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: int = 180) -> str:
-    completed = run_podman_command(
+    payload = run_pod_local_agent(
         instance,
-        [
-            "python3",
-            f"{CONTAINER_SHARED_BOARD_DIR}/tools/mattermost_autochat_turn.py",
-            "--instance",
-            str(instance.instance_id),
-            "--timeout",
-            str(timeout_seconds),
-            "--force",
-        ],
-        timeout_seconds=max(120, timeout_seconds + 60),
+        build_mattermost_lounge_turn_prompt(instance),
+        max(120, timeout_seconds),
+        agent_id=mattermost_lounge_agent_id(instance.instance_id),
+        session_id=f"mattermost-lounge-run-now-{instance.instance_id}-{int(time.time())}",
     )
-    if completed.returncode != 0:
+    text = latest_assistant_text(payload).strip()
+    if not text:
         raise SystemExit(
-            f"mattermost lounge turn failed for instance {instance.instance_id}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
+            f"mattermost lounge run-now returned no text for instance {instance.instance_id}\n"
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
-    return (completed.stdout.strip() or completed.stderr.strip()).strip()
+    return text
+
+
+def latest_assistant_text(payload: dict[str, object]) -> str:
+    payloads = payload.get("payloads")
+    if not isinstance(payloads, list):
+        return ""
+    latest = ""
+    for entry in payloads:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("role") != "assistant":
+            continue
+        text = entry.get("text")
+        if isinstance(text, str) and text.strip():
+            latest = text.strip()
+    return latest
 
 def parse_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}

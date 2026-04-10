@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import importlib.util
@@ -13,6 +13,8 @@ from pathlib import Path
 
 from openclaw_podman_starter import cli
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 RENDER_BOARD_VIEW_PATH = Path(__file__).resolve().parents[1] / "scripts" / "render_board_view.py"
 render_board_view_spec = importlib.util.spec_from_file_location("render_board_view", RENDER_BOARD_VIEW_PATH)
@@ -27,6 +29,13 @@ shared_board_service = importlib.util.module_from_spec(shared_board_service_spec
 assert shared_board_service_spec and shared_board_service_spec.loader
 sys.modules[shared_board_service_spec.name] = shared_board_service
 shared_board_service_spec.loader.exec_module(shared_board_service)
+
+MATTERMOST_GET_STATE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "mattermost_get_state.py"
+mattermost_get_state_spec = importlib.util.spec_from_file_location("mattermost_get_state", MATTERMOST_GET_STATE_PATH)
+mattermost_get_state = importlib.util.module_from_spec(mattermost_get_state_spec)
+assert mattermost_get_state_spec and mattermost_get_state_spec.loader
+sys.modules[mattermost_get_state_spec.name] = mattermost_get_state
+mattermost_get_state_spec.loader.exec_module(mattermost_get_state)
 
 
 def write_env_file(path: Path) -> None:
@@ -70,7 +79,7 @@ class CliTests(unittest.TestCase):
                     "responder: つむぎ",
                     "observation: Something changed",
                     "proposal: Ship the fix",
-                    "handoff question to さく: What do you think?",
+                    "handoff question to 縺輔￥: What do you think?",
                 ]
             )
         )
@@ -90,8 +99,8 @@ class CliTests(unittest.TestCase):
             raw_text="Body",
         )
         html = render_board_view.bubble_html(message)
-        self.assertIn("つむぎ | gemma4:e2b", html)
-        self.assertNotIn("·", html)
+        self.assertIn(" | gemma4:e2b", html)
+        self.assertNotIn("ﾂｷ", html)
 
     def test_autochat_helpers(self) -> None:
         self.assertEqual(cli.autochat_job_name(1), "shared-board-autochat-001")
@@ -103,6 +112,49 @@ class CliTests(unittest.TestCase):
         self.assertEqual(cli.previous_speaker(3), "lyra")
         self.assertEqual(cli.mattermost_lounge_job_name(1), "mattermost-lounge-autochat-001")
         self.assertEqual(cli.mattermost_lounge_agent_id(2), "mattermost-lounge-tsumugi")
+
+    def test_mattermost_lounge_prompt_mentions_action_scripts(self) -> None:
+        instance = cli.ScaledInstance(
+            instance_id=1,
+            pod_name="openclaw-1-pod",
+            container_name="openclaw-1",
+            config=cli.Config(
+                env_file=Path("D:/tmp/.env"),
+                container_name="openclaw-1",
+                image="image",
+                gateway_port=18789,
+                bridge_port=18790,
+                board_port=18889,
+                publish_host="127.0.0.1",
+                network="podman",
+                gateway_bind="lan",
+                userns="keep-id",
+                config_dir=Path("D:/tmp/instances/agent_001"),
+                workspace_dir=Path("D:/tmp/instances/agent_001/workspace"),
+                gateway_token="token",
+                ollama_base_url="http://127.0.0.1:11434",
+                ollama_model="gemma4:e2b",
+                board_image="python:3.11-slim",
+                raw_env={},
+            ),
+        )
+        prompt = cli.build_mattermost_lounge_turn_prompt(instance)
+        self.assertIn("mattermost_workspace_turn.py", prompt)
+        self.assertIn("workspace の `SOUL.md` / `IDENTITY.md` を source of truth", prompt)
+        self.assertIn("stdout だけをそのまま返答してください", prompt)
+
+    def test_latest_assistant_text_ignores_non_assistant_entries(self) -> None:
+        payload = {
+            "payloads": [
+                {"role": "tool", "text": "tool output"},
+                {"role": "assistant", "text": "python3 /tmp/example.py"},
+                {"role": "assistant", "text": "POSTED abc123"},
+            ]
+        }
+        self.assertEqual(cli.latest_assistant_text(payload), "POSTED abc123")
+
+    def test_mattermost_get_state_module_exposes_main(self) -> None:
+        self.assertTrue(hasattr(mattermost_get_state, "main"))
 
     def test_discussion_thread_helpers(self) -> None:
         thread_id = cli.slugify_thread_id("Gemma4 Board: QA Smoke!!")
@@ -169,7 +221,7 @@ class CliTests(unittest.TestCase):
                 self.assertIn("**返答言語:** 日本語が既定", identity_text)
                 self.assertIn("もっと気楽に寄せてよい", identity_text)
                 self.assertIn(f"# BBS.md - {name} の共有掲示板メモ", bbs_text)
-                self.assertIn("軽い相談や雑談の投げ込みでも使っていい。", bbs_text)
+                self.assertIn("thread を始めた個体が `summary.md` を更新する。", bbs_text)
                 self.assertEqual(resolved.config.config_dir.name, f"agent_{instance_id:03d}")
 
     def test_scaled_instance_state_seeds_shared_board_and_manifest_mount(self) -> None:
@@ -189,6 +241,11 @@ class CliTests(unittest.TestCase):
             self.assertTrue((board_root / "templates" / "topic-template.md").exists())
             self.assertTrue((board_root / "tools" / "autochat_turn.py").exists())
             self.assertTrue((board_root / "tools" / "mattermost_autochat_turn.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_get_state.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_post_message.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_create_channel.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_add_reaction.py").exists())
+            self.assertTrue((board_root / "tools" / "mattermost_workspace_turn.py").exists())
             self.assertTrue((board_root / "tools" / "render_board_view.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_service.py").exists())
             self.assertTrue((board_root / "tools" / "shared_board_app.html").exists())
@@ -376,3 +433,6 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
