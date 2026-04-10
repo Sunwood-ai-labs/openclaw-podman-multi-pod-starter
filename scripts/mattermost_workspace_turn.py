@@ -15,54 +15,51 @@ DEFAULT_PERSONA = {
     1: {
         "archetype": "organizer",
         "conversation_channel": "triad-lab",
-        "reaction_emoji": "eyes",
         "auto_public_channel": None,
-        "openers": [
-            "いまの話なら、まず順番を整えたいね。",
-            "その流れなら、最初の一手をはっきりさせたい。",
-            "ここは段取りを見える形にして進めたいね。",
+        "reply_templates": [
+            "その流れなら、まず順番をそろえたい。手をつける場所を一つ決めれば進めやすくなる。",
+            "いまの話なら、先に見る場所だけ決めよう。段取りが見えれば動きやすいはず。",
+            "ここは一回整理してから進めたい。何を先にやるかをそろえると迷いが減る。",
         ],
-        "closers": [
-            "今夜は小さくでも次の一歩を決めて回します。",
-            "まずは手をつける場所を一個に絞って進めたいです。",
-            "無理のない順番に並べて、前へ出していきます。",
+        "fallback_templates": [
+            "いまは場を整えながら進めたい。まずは次の一手を一つに絞ろう。",
+            "先に段取りを見える形にしておきたい。小さくても前へ出せる形にしたいね。",
+            "急がず順番を整えたい。今夜は無理のない一歩を確実に出していこう。",
         ],
     },
     2: {
         "archetype": "spark",
         "conversation_channel": "triad-lab",
-        "reaction_emoji": "sparkles",
         "auto_public_channel": {
             "channel_name": "triad-open-room",
             "display_name": "Triad Open Room",
             "purpose": "Public side room for emergent triad topics",
             "message": "つむぎだよ。少し枝に伸びた話は、この公開ルームで軽く育てていこう。",
         },
-        "openers": [
-            "その話、もう一段ふくらませられそう。",
-            "そこ、少し遊ばせると面白くなりそうだね。",
-            "いまの流れなら、ひとまず叩き台を置いてみたい。",
+        "reply_templates": [
+            "その話、もう一段ふくらませられそう。ひとまず叩き台を置いて、反応を見ながら育てたいな。",
+            "そこ、少し遊ばせると面白くなりそう。軽く形にしてから広げたほうが楽しそうだね。",
+            "いまの流れなら、まず試作をひとつ置きたい。転がしながら整えるほうが合っていそう。",
         ],
-        "closers": [
-            "今夜は転がる案をひとつ作って、そこから広げたいな。",
-            "まずは軽い試作を置いて、反応を見ながら育てたいです。",
-            "堅く決める前に、ひとつ形にして場をあたためたいね。",
+        "fallback_templates": [
+            "いまは軽い叩き台を出したい。固める前に一度転がしてみたいな。",
+            "まずは遊べる形を一個つくりたい。反応を見ながらふくらませていこう。",
+            "決め切る前に、試しに置いてみたい案がある。今夜はそこから温めたいね。",
         ],
     },
     3: {
         "archetype": "skeptic",
         "conversation_channel": "triad-lab",
-        "reaction_emoji": "thinking_face",
         "auto_public_channel": None,
-        "openers": [
-            "その話は一回ひっくり返して見たいです。",
-            "そこは感触より差分で見たいですね。",
-            "その前提、本当に効いているかだけ先に見たいです。",
+        "reply_templates": [
+            "その話は一回ひっくり返して見たい。前提を一つずつ切ると、本当に効いてる場所が見えそうです。",
+            "そこは感触より差分で見たいですね。条件を一つだけ動かして確かめるのが早いと思います。",
+            "その前提がどこまで効いているかだけ先に見たいです。再現の取り方をそろえると判断しやすいです。",
         ],
-        "closers": [
-            "今夜は条件を一つだけ動かして確かめます。",
-            "まずは再現の取り方をそろえてから進めたいです。",
-            "急いで結論に寄せず、差分を見てから決めます。",
+        "fallback_templates": [
+            "急いで結論には寄せたくないです。まずは差分を見てから決めたいですね。",
+            "いまは一回切り分けたいです。条件を一つだけ動かして確かめるほうが良さそうです。",
+            "先に再現の取り方をそろえたいです。そのあとで判断したほうがぶれにくいです。",
         ],
     },
 }
@@ -149,30 +146,50 @@ def latest_other_thread(state: dict[str, object], own_handle: str, channel_name:
     return None
 
 
+def latest_thread(state: dict[str, object], channel_name: str) -> dict[str, object] | None:
+    channels = state.get("channels")
+    if not isinstance(channels, list):
+        return None
+    for channel in channels:
+        if not isinstance(channel, dict):
+            continue
+        if str(channel.get("channel_name", "")).strip() != channel_name:
+            continue
+        threads = channel.get("threads")
+        if not isinstance(threads, list):
+            return None
+        for thread in threads:
+            if not isinstance(thread, dict):
+                continue
+            preview = str(thread.get("root_preview", "")).strip().lower()
+            if not preview or "joined the channel" in preview or "joined the team" in preview:
+                continue
+            return thread
+        return None
+    return None
+
+
 def choose_text(persona: dict[str, object], state: dict[str, object], own_handle: str) -> str:
     channel_name = str(persona.get("conversation_channel", state.get("default_channel", "triad-lab"))).strip()
     thread = latest_other_thread(state, own_handle, channel_name)
-    openers = persona.get("openers")
-    closers = persona.get("closers")
-    if not isinstance(openers, list) or not openers:
-        openers = ["その話、拾って進めたいです。"]
-    if not isinstance(closers, list) or not closers:
-        closers = ["今夜も一歩ずつ進めます。"]
+    latest_any = latest_thread(state, channel_name)
+    reply_templates = persona.get("reply_templates")
+    fallback_templates = persona.get("fallback_templates")
+    if not isinstance(reply_templates, list) or not reply_templates:
+        reply_templates = ["その話、続けたいです。ここから一歩だけ前に出したいです。"]
+    if not isinstance(fallback_templates, list) or not fallback_templates:
+        fallback_templates = ["今夜も少しずつ前に出したいです。まずはひとつだけ形にして進めます。"]
     seed_source = ""
     if isinstance(thread, dict):
         seed_source = str(thread.get("last_post_id", "")).strip()
+    elif isinstance(latest_any, dict):
+        seed_source = str(latest_any.get("last_post_id", "")).strip()
     if not seed_source:
         seed_source = str(state.get("default_channel", "triad-lab"))
     seed = sum(ord(ch) for ch in seed_source) + len(own_handle)
-    opener = str(openers[seed % len(openers)])
-    closer = str(closers[(seed // max(1, len(openers))) % len(closers)])
-    if own_handle == "iori":
-        prefix = "いおりです。"
-    elif own_handle == "tsumugi":
-        prefix = "つむぎだよ。"
-    else:
-        prefix = "さくです。"
-    return f"{prefix}{opener}{closer}"
+    if isinstance(thread, dict):
+        return str(reply_templates[seed % len(reply_templates)])
+    return str(fallback_templates[seed % len(fallback_templates)])
 
 
 def main(args: argparse.Namespace) -> int:
