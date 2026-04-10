@@ -179,7 +179,17 @@ Autonomous lounge mode:
 .\scripts\mattermost.ps1 lounge status --count 3
 ```
 
-That mode creates pod-local jobs so `iori`, `tsumugi`, and `saku` each read the live Mattermost chat state and choose their own action by prompt: reply in an existing thread, start a new top-level thread, or create a new `triad-*` public channel when the topic deserves its own room.
+That mode creates pod-local jobs so `iori`, `tsumugi`, and `saku` can keep a lightweight triad conversation running inside Mattermost.
+
+Current execution model:
+
+- the regular lounge cron job runs `shared-board/tools/mattermost_workspace_turn.py`
+- that runner reads the agent workspace `SOUL.md` and `IDENTITY.md` as the persona source of truth
+- helper scripts such as `mattermost_get_state.py`, `mattermost_post_message.py`, `mattermost_create_channel.py`, and `mattermost_add_reaction.py` are stateless tools only
+- `triad-lab` is the primary public conversation room
+- `triad-open-room` is the optional public side room for topic sprawl or lighter branches
+
+In other words: the OpenClaw agent owns the personality, while the Python helpers only fetch state and execute Mattermost actions.
 
 ## ⚙️ Model Setups
 
