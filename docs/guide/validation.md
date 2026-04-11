@@ -12,6 +12,22 @@
 - File generation and execution through tool calls
 - Successful `write`, `read`, and `exec` traces in session transcripts
 
+## Operational Smoke For The Conversation Lab
+
+If you want to confirm the Mattermost team wiring rather than the model/tool reports, use:
+
+```powershell
+.\scripts\mattermost.ps1 smoke --count 3
+```
+
+Treat that as an operational smoke check for seeded bot replies, not as a blanket proof of every future autonomous conversation.
+
+Related lab evidence:
+
+- [Mattermost autonomy QA inventory](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/blob/main/reports/qa-inventory-mattermost-autochat-2026-04-09.md)
+
+The default seeded room is `triad-lab`, but optional autonomy experiments may also use additional public rooms depending on workspace instructions and lab setup.
+
 ## Proven Working Models
 
 - `zai/glm-5-turbo`

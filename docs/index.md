@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: openclaw-podman-multi-pod-starter
-  text: OpenClaw on repeatable Podman pods
-  tagline: File-based kube-play manifests, isolated multi-instance state, and verified Gemma / GLM runs.
+  text: Starter kit for autonomous OpenClaw teams
+  tagline: Launch Podman-isolated agents, seed per-agent personas, and let them coordinate in a local Mattermost lab.
   image:
     src: /header.svg
     alt: openclaw-podman-multi-pod-starter
@@ -13,30 +13,32 @@ hero:
       text: Quick Start
       link: /guide/quickstart
     - theme: alt
+      text: Agent Team Starter
+      link: /guide/agent-teams
+    - theme: alt
       text: Validation
       link: /guide/validation
-    - theme: alt
-      text: GitHub
-      link: https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter
 
 features:
-  - title: Podman kube play first
-    details: The repo treats generated pod manifests as the runtime source of truth instead of relying on ad-hoc one-off commands.
-  - title: Multi-instance isolation
-    details: State, workspace, tokens, and ports are split per instance so local side-by-side pods remain manageable.
-  - title: Real model verification
-    details: Validation reports document pod-local file generation and execution using Z.AI GLM and Ollama Gemma models.
+  - title: One pod per agent
+    details: Each agent gets its own Podman pod, config, workspace, and ports so local teams stay isolated and understandable.
+  - title: Managed persona scaffolds
+    details: Seeded `SOUL.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `TOOLS.md`, and `BOOTSTRAP.md` files turn fresh pods into actual teammates.
+  - title: Mattermost communication lab
+    details: Run a local Mattermost pod, seed bot accounts, smoke-test replies, and enable heartbeat-driven autonomous chatter.
 ---
 
 ## What You Get
 
-- A small helper CLI managed by `uv`
-- PowerShell entry points for Windows-first operation
-- Generated `pod.yaml` manifests for single-instance and multi-instance runs
-- Validation reports for `glm-5-turbo`, `gemma4:e4b`, and `gemma4:e2b`
+- A Windows-first OpenClaw starter managed by `uv` and PowerShell
+- Generated `pod.yaml` manifests for single-agent and multi-agent runs
+- Per-agent workspace scaffolds for roles, personality, and heartbeat behavior
+- A local communication surface for human mentions and agent-to-agent chatter
+- Validation notes for working local-model paths
 
 ## Read Next
 
+- [Agent Team Starter](/guide/agent-teams)
 - [Quick Start](/guide/quickstart)
 - [Configuration](/guide/configuration)
 - [Validation](/guide/validation)

@@ -1,20 +1,68 @@
 # Quick Start
 
+This page is the fastest path to a working local team. If you want the role scaffolds and collaboration model in more detail, continue to [Agent Team Starter](/guide/agent-teams) after the first run.
+
 ## Prerequisites
 
 - `uv`
 - `Podman`
 - `openclaw` CLI
-- `ollama` CLI
-- A local Ollama model such as `gemma4:e2b`
+- a configured provider key, or a local Ollama model already reachable from OpenClaw
 
-## Single Instance
+## Boot A Three-Agent Team
 
 ```powershell
-cd D:\Prj\openclaw-podman-multi-pod-starter
+cd D:\Prj\openclaw-podman-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
+.\scripts\init.ps1 --count 3
+.\scripts\doctor.ps1
+.\scripts\mattermost.ps1 init
+.\scripts\mattermost.ps1 launch
+.\scripts\mattermost.ps1 seed --count 3
+.\scripts\launch.ps1 --count 3
+.\scripts\mattermost.ps1 smoke --count 3
+```
+
+## What Gets Created
+
+Per agent:
+
+- `.openclaw/instances/agent_00X/openclaw.json`
+- `.openclaw/instances/agent_00X/pod.yaml`
+- `.openclaw/instances/agent_00X/workspace/`
+
+Per workspace:
+
+- `AGENTS.md`
+- `SOUL.md`
+- `IDENTITY.md`
+- `USER.md`
+- `HEARTBEAT.md`
+- `TOOLS.md`
+- `BOOTSTRAP.md`
+
+## Default Triad
+
+- Instance 1 / `いおり`: systems lead
+- Instance 2 / `つむぎ`: builder muse
+- Instance 3 / `さく`: verification sentinel
+
+## Useful Mattermost Commands
+
+```powershell
+.\scripts\mattermost.ps1 smoke --count 3
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
+```
+
+`smoke` is the safest first proof. Add `lounge enable` after that when you want recurring autonomous chatter.
+
+## Single-Instance Fallback
+
+```powershell
 .\scripts\init.ps1
 .\scripts\doctor.ps1
 .\scripts\launch.ps1 --dry-run
@@ -24,56 +72,4 @@ Runtime command:
 
 ```powershell
 podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
-```
-
-## Three Instances
-
-```powershell
-.\scripts\init.ps1 --count 3
-.\scripts\launch.ps1 --count 3 --dry-run
-.\scripts\status.ps1 --count 3
-.\scripts\logs.ps1 --instance 2 -Follow
-.\scripts\stop.ps1 --count 3 --remove
-```
-
-Default ports:
-
-- Instance 1: `127.0.0.1:18789`
-- Instance 2: `127.0.0.1:18791`
-- Instance 3: `127.0.0.1:18793`
-
-Directory layout:
-
-- `.openclaw/instances/agent_001`
-- `.openclaw/instances/agent_002`
-- `.openclaw/instances/agent_003`
-
-Default Gemma4 triad personas:
-
-- Instance 1 / `いおり`: systems lead
-- Instance 2 / `つむぎ`: builder muse
-- Instance 3 / `さく`: verification sentinel
-
-`init --count 3` seeds each instance workspace with managed `SOUL.md`, `IDENTITY.md`,
-`HEARTBEAT.md`, `BOOTSTRAP.md`, `USER.md`, and `TOOLS.md`.
-
-## Mattermost Lounge
-
-For the regular Mattermost lounge path, the important split is:
-
-- personality lives in each instance workspace, especially `SOUL.md` and `IDENTITY.md`
-- the cron job runs `mattermost-tools/mattermost_workspace_turn.py`
-- helper scripts under `mattermost-tools/mattermost_*.py` are stateless action tools
-
-Default public rooms:
-
-- `triad-lab`: main triad conversation room
-- `triad-open-room`: optional public side room for branch topics
-
-Useful commands:
-
-```powershell
-.\scripts\mattermost.ps1 lounge enable --count 3
-.\scripts\mattermost.ps1 lounge status --count 3
-.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
 ```

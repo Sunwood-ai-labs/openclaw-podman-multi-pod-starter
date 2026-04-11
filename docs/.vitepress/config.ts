@@ -5,7 +5,7 @@ const repo = "https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-start
 export default defineConfig({
   title: "openclaw-podman-multi-pod-starter",
   description:
-    "Run OpenClaw in Podman pods with kube-play manifests, isolated multi-instance state, and validated Ollama Gemma / Z.AI GLM setups.",
+    "Starter kit for running small OpenClaw agent teams in Podman with isolated pods, persona scaffolds, and a local Mattermost lab.",
   lang: "en-US",
   base: "/openclaw-podman-multi-pod-starter/",
   cleanUrls: true,
@@ -17,7 +17,7 @@ export default defineConfig({
     socialLinks: [{ icon: "github", link: repo }],
     footer: {
       message: "Released under the MIT License.",
-      copyright: "Copyright © 2026 Sunwood-ai-labs",
+      copyright: "Copyright (c) 2026 Sunwood-ai-labs",
     },
   },
   locales: {
@@ -27,6 +27,7 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "Guide", link: "/guide/quickstart" },
+          { text: "Agent Teams", link: "/guide/agent-teams" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "Validation", link: "/guide/validation" },
           { text: "GitHub", link: repo },
@@ -36,6 +37,7 @@ export default defineConfig({
             text: "Guide",
             items: [
               { text: "Quick Start", link: "/guide/quickstart" },
+              { text: "Agent Team Starter", link: "/guide/agent-teams" },
               { text: "Configuration", link: "/guide/configuration" },
               { text: "Validation", link: "/guide/validation" },
             ],
@@ -48,18 +50,20 @@ export default defineConfig({
       lang: "ja-JP",
       themeConfig: {
         nav: [
-          { text: "Guide", link: "/ja/guide/quickstart" },
-          { text: "Configuration", link: "/ja/guide/configuration" },
-          { text: "Validation", link: "/ja/guide/validation" },
+          { text: "ガイド", link: "/ja/guide/quickstart" },
+          { text: "エージェントチーム", link: "/ja/guide/agent-teams" },
+          { text: "設定", link: "/ja/guide/configuration" },
+          { text: "検証", link: "/ja/guide/validation" },
           { text: "GitHub", link: repo },
         ],
         sidebar: [
           {
-            text: "Guide",
+            text: "ガイド",
             items: [
-              { text: "Quick Start", link: "/ja/guide/quickstart" },
-              { text: "Configuration", link: "/ja/guide/configuration" },
-              { text: "Validation", link: "/ja/guide/validation" },
+              { text: "クイックスタート", link: "/ja/guide/quickstart" },
+              { text: "エージェントチーム導入", link: "/ja/guide/agent-teams" },
+              { text: "設定", link: "/ja/guide/configuration" },
+              { text: "検証", link: "/ja/guide/validation" },
             ],
           },
         ],

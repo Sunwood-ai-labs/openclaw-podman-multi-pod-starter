@@ -1,10 +1,10 @@
-﻿<div align="center">
+<div align="center">
 
 # openclaw-podman-multi-pod-starter
 
 ![Project header](./assets/header.svg)
 
-Run OpenClaw inside Podman with file-based `podman kube play` manifests, isolated multi-instance state, and validated local-model setups for Ollama Gemma and Z.AI GLM.
+Starter kit for running small teams of OpenClaw agents on Podman with isolated pods, per-agent persona scaffolds, and a local Mattermost communication lab.
 
 [日本語 README](./README.ja.md)
 
@@ -17,33 +17,108 @@ Run OpenClaw inside Podman with file-based `podman kube play` manifests, isolate
 
 </div>
 
-## ✨ Overview
+## Overview
 
-This repository packages a practical Windows-first starter for running OpenClaw in Podman.
+This repository is a Windows-first starter for booting one or more OpenClaw agents as Podman pods and turning them into a communicative local team.
 
-Key ideas:
+What it includes:
 
-- One instance = one Podman pod = one OpenClaw gateway container
-- Instance state, workspace, token, and ports are isolated
-- Runtime manifests are generated as `pod.yaml` files and executed with `podman kube play`
-- The repo can scale to multiple independent local instances such as 3 side-by-side pods
-- Validation reports for `zai/glm-5-turbo`, `ollama/gemma4:e4b`, and `ollama/gemma4:e2b` are included
+- one pod per agent, with isolated state, workspace, tokens, and ports
+- managed workspace scaffolds such as `SOUL.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `TOOLS.md`, and `BOOTSTRAP.md`
+- PowerShell entry points and a small Python CLI managed by `uv`
+- a local Mattermost lab for human mentions, bot smoke tests, and heartbeat-driven team chatter
+- validation reports for `zai/glm-5-turbo`, `ollama/gemma4:e4b`, and `ollama/gemma4:e2b`
 
-## 🧭 Why This Repo Exists
+## Why This Starter Exists
 
-OpenClaw's official docs explain Podman and multi-gateway concepts, but operating several local instances with repeatable manifests, Windows path handling, and local-model verification still takes glue work.
+OpenClaw's official docs explain Podman, multiple gateways, and model providers, but building a repeatable local team still takes glue work:
 
-This repo provides that glue:
+- Windows path handling and Podman machine behavior
+- per-agent workspace and persona bootstrapping
+- stable multi-instance manifests
+- a communication surface where agents can actually talk to each other
 
-- a small Python CLI managed by `uv`
-- PowerShell wrappers for common operations
-- generated per-instance state and manifests
-- known-good verification notes for pod-local agent execution
+This repository packages that glue into a starter kit instead of leaving it as ad-hoc operator setup.
 
-## 🚀 Quick Start
+## What Makes It An Agent Team Starter
+
+### 1. One Agent, One Pod, One Workspace
+
+Each instance gets its own generated state under `.openclaw/instances/<agent_id>/`, including:
+
+- `openclaw.json`
+- `pod.yaml`
+- `control.env`
+- `workspace/`
+
+That keeps local agent teams manageable even when you run several side by side.
+
+### 2. Managed Persona Scaffolds
+
+`init --count N` seeds each agent workspace with opinionated starter files:
+
+- `SOUL.md`: personality and collaboration style
+- `IDENTITY.md`: role, title, signature, and stance
+- `USER.md`: who the agent is helping
+- `HEARTBEAT.md`: what the agent should do on heartbeat
+- `TOOLS.md`: machine-local notes and cheat sheet
+- `BOOTSTRAP.md`: first-run self-orientation
+- `AGENTS.md`: workspace operating rules
+
+Those files are the main place where you turn a generic pod into a teammate with a voice, role, and rhythm.
+
+### 3. Conversation Lab Included
+
+The Mattermost path is built in rather than bolted on later:
+
+- a local Mattermost pod runs on the same `openclaw-starter` network
+- seeded bot accounts let your agents join the same channel
+- the default `oncall` chat mode supports human-led mentions such as `@iori @tsumugi @saku ...`
+- heartbeat autonomy can be enabled so each agent checks Mattermost state and performs one helper action per heartbeat when not blocked or rate-limited
+
+### 4. Operator-Friendly Tracking
+
+The repository versions a sanitized subset of generated `.openclaw` files so the starter's persona and manifest scaffolds can evolve with the repo instead of living only in opaque runtime state.
+
+## Quick Start: Boot A Triad
 
 ```powershell
-cd D:\Prj\openclaw-podman-multi-pod-starter
+cd D:\Prj\openclaw-podman-starter
+uv sync
+Copy-Item .env.example .env
+notepad .env
+.\scripts\init.ps1 --count 3
+.\scripts\doctor.ps1
+.\scripts\mattermost.ps1 init
+.\scripts\mattermost.ps1 launch
+.\scripts\mattermost.ps1 seed --count 3
+.\scripts\launch.ps1 --count 3
+.\scripts\mattermost.ps1 smoke --count 3
+```
+
+After that, you have:
+
+- three isolated OpenClaw pods
+- three seeded agent workspaces with persona files
+- one local Mattermost channel where the team can respond to mentions
+- a verified mention/reply path through Mattermost
+
+Optional autonomy proof:
+
+```powershell
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
+```
+
+Enable that when you want the team to speak on its own after the basic chat path looks right.
+
+## Single-Instance Path
+
+If you want a minimal first pass before you boot a team:
+
+```powershell
+cd D:\Prj\openclaw-podman-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -64,9 +139,7 @@ Actual runtime command:
 podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
 ```
 
-## 🧱 Scale Out
-
-Launch 3 isolated local instances:
+## Start An Agent Trio
 
 ```powershell
 .\scripts\init.ps1 --count 3
@@ -82,43 +155,15 @@ Default topology:
 - Instance 2: `openclaw-2-pod` on `127.0.0.1:18791`
 - Instance 3: `openclaw-3-pod` on `127.0.0.1:18793`
 
-Each instance gets its own:
-
-- `control.env`
-- `.env`
-- `openclaw.json`
-- `pod.yaml`
-- `workspace/`
-
-under `.openclaw/instances/<agent_id>/`.
-
-Scaled instance directories use stable agent ids such as:
-
-- `.openclaw/instances/agent_001`
-- `.openclaw/instances/agent_002`
-- `.openclaw/instances/agent_003`
-
-Gemma4 triad persona seeding:
+Default triad roles:
 
 - Instance 1 / `いおり`: systems lead for deployment, manifests, and state hygiene
 - Instance 2 / `つむぎ`: builder muse for docs, prompts, and fast idea shaping
 - Instance 3 / `さく`: verification sentinel for tests, diffs, and risk checks
 
-`init --count 3` also seeds each workspace with managed `SOUL.md`, `IDENTITY.md`,
-`HEARTBEAT.md`, `BOOTSTRAP.md`, `USER.md`, and `TOOLS.md`.
-Legacy stock templates are upgraded automatically, and managed scaffold files are refreshed on re-init.
+The starter can scale beyond the original triad, but the three-agent layout is the clearest default for a repo that wants to feel like a small autonomous team instead of a single container wrapper.
 
-Each scaled instance also gets a managed `mattermost-tools/` directory under its `.openclaw` state.
-Those scripts are available inside the pod at `/home/node/.openclaw/mattermost-tools` and are used only for Mattermost lounge turns.
-
-## 💬 Mattermost Lab
-
-This repo can also boot a standalone Mattermost pod for channel-based triad chats.
-
-- Mattermost runs as its own Podman pod on the shared `openclaw-starter` network
-- each OpenClaw instance gets its own bot token from `./.openclaw/mattermost/state.env`
-- the default channel mode is `oncall`, so a human can post `@iori @tsumugi @saku ...` without causing bot-to-bot loops
-- local Pod-to-Pod Mattermost traffic opts into `channels.mattermost.network.dangerouslyAllowPrivateNetwork=true` because the service is intentionally reachable on the private Podman network
+## Mattermost Communication Lab
 
 End-to-end setup:
 
@@ -136,27 +181,30 @@ Default local URLs:
 - OpenClaw-internal Mattermost base URL: `http://mattermost:8065`
 - Seeded channel: `openclaw:triad-lab`
 
-Autonomous lounge mode:
+Operational autonomy evidence:
+
+- [Mattermost autonomy QA inventory](./reports/qa-inventory-mattermost-autochat-2026-04-09.md)
+
+Autonomy controls:
 
 ```powershell
 .\scripts\mattermost.ps1 lounge enable --count 3
-.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
 .\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 15
 ```
-
-That mode enables native heartbeat-driven chatter so `iori`, `tsumugi`, and `saku` can decide independently when to speak inside Mattermost.
 
 Current execution model:
 
-- each scaled OpenClaw instance uses the main agent heartbeat rather than a turn-based lounge runner
-- `HEARTBEAT.md` tells the agent to inspect Mattermost state and decide for itself whether to speak or stay quiet
-- helper scripts such as `mattermost_get_state.py`, `mattermost_post_message.py`, `mattermost_create_channel.py`, and `mattermost_add_reaction.py` remain stateless tools only
-- `triad-lab` is the primary public conversation room
-- `triad-open-room` is the optional public side room for topic sprawl or lighter branches
+- `SOUL.md`, `IDENTITY.md`, and the rest of the workspace scaffold define the agent's voice and role
+- the main agent heartbeat is used for Mattermost autonomy
+- on each active heartbeat, the agent checks current Mattermost state first and then performs one helper action or returns `HEARTBEAT_OK` when blocked
+- helper scripts remain stateless tools for reading state and posting actions
 
-In other words: the OpenClaw agent owns both the personality and the decision to speak, while the Python helpers only fetch state and execute Mattermost actions.
+This keeps the personality in the workspace and the transport logic in the helper layer.
 
-## ⚙️ Model Setups
+`triad-lab` is the default seeded room, but optional autonomy flows may also use additional public rooms such as `triad-open-room` or `triad-free-talk` depending on workspace instructions and lab setup.
+
+## Model Setups
 
 ### Ollama
 
@@ -181,7 +229,7 @@ Verified Z.AI path:
 
 The repo can pass `ZAI_API_KEY` through to the pod when present in `.env`.
 
-## ✅ Verification Reports
+## Verification Reports
 
 Validation notes are kept in:
 
@@ -194,10 +242,11 @@ Those reports document:
 - agent-side file generation and execution
 - transcript-backed `write` / `read` / `exec` evidence
 
-## 🛠️ Main Commands
+## Main Commands
 
 ```powershell
 .\scripts\init.ps1
+.\scripts\doctor.ps1
 .\scripts\launch.ps1
 .\scripts\status.ps1
 .\scripts\logs.ps1 -Follow
@@ -214,7 +263,7 @@ Those reports document:
 .\scripts\autostart-status.ps1
 ```
 
-Scaled usage:
+Scaled CLI usage:
 
 ```powershell
 uv run openclaw-podman init --count 3
@@ -231,33 +280,25 @@ uv run openclaw-podman mattermost lounge status --count 3
 uv run openclaw-podman mattermost lounge run-now --count 3
 ```
 
-Windows auto-recovery after reboot is wired through the current user's Startup folder:
-
-- `scripts/register-autostart.ps1` installs `OpenClawPodmanStarter-Autostart.cmd` into `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
-- that launcher runs `scripts/autostart.ps1`
-- `autostart.ps1` starts Podman Desktop first when it is installed, waits for the Podman machine, and launches all 3 pods
-
-This means the stack comes back automatically after Windows reboot once the user logs in.
-
-## 📁 Repository Layout
+## Repository Layout
 
 - `src/openclaw_podman_starter/` - helper CLI
-- `scripts/` - PowerShell wrappers
+- `scripts/` - PowerShell wrappers and Mattermost helpers
+- `docs/` - VitePress docs
 - `reports/` - validation reports
 - `.env.example` - starter environment template
 
-## 🗂️ Versioned `.openclaw` Files
+## Versioned `.openclaw` Files
 
-Most of `.openclaw/` is still runtime state and stays ignored.
+Most of `.openclaw/` stays ignored because it is runtime state.
 
-The repository intentionally allows this tracked subset:
+The repository intentionally tracks this sanitized subset:
 
 - `.openclaw/openclaw.json`
 - `.openclaw/pod.yaml`
 - `.openclaw/mattermost/pod.yaml`
 - `.openclaw/instances/agent_*/openclaw.json`
 - `.openclaw/instances/agent_*/pod.yaml`
-- `.openclaw/instances/agent_*/board-pod.yaml`
 - `.openclaw/instances/agent_*/workspace/AGENTS.md`
 - `.openclaw/instances/agent_*/workspace/BOOTSTRAP.md`
 - `.openclaw/instances/agent_*/workspace/HEARTBEAT.md`
@@ -265,25 +306,20 @@ The repository intentionally allows this tracked subset:
 - `.openclaw/instances/agent_*/workspace/SOUL.md`
 - `.openclaw/instances/agent_*/workspace/TOOLS.md`
 - `.openclaw/instances/agent_*/workspace/USER.md`
-- `.openclaw/instances/shared-board/README.md`
 
-These generated config/manifests are written in a trackable form:
+These generated config and scaffold files are written in a trackable form:
 
-- secrets are copied into the mounted state env file (`.openclaw/.../.env`) instead of being inlined into `pod.yaml`
+- secrets are copied into mounted env files instead of being inlined into `pod.yaml`
 - Mattermost bot tokens are referenced from `openclaw.json` via `${OPENCLAW_MATTERMOST_BOT_TOKEN}`
 - volatile `meta` timestamps are omitted from generated `openclaw.json`
 
-The per-agent `workspace/` directories previously had embedded `.git/` directories. Those nested repos are now preserved as `.git.nested-backup/` so the outer repository can track the selected workspace Markdown files directly.
-
-Secrets and local-only runtime state remain ignored, including `.openclaw/**/.env`, `control.env`, `state.env`, session logs, SQLite files, viewer output, chat thread history, and `.git.nested-backup/`.
-
-## 🔐 Trust Model
+## Trust Model
 
 This repo is designed for same-trust operator workflows.
 
 It isolates instances operationally, but it is not intended to claim hard multi-tenant security separation. OpenClaw is configured in a full-access-in-container mode and relies on the outer Podman boundary rather than OpenClaw's internal sandbox.
 
-## 🧪 CI
+## CI
 
 The included GitHub Actions workflow validates:
 
@@ -293,7 +329,7 @@ The included GitHub Actions workflow validates:
 - single-instance init
 - multi-instance dry-run generation
 
-## 📚 References
+## References
 
 - [OpenClaw Podman docs](https://docs.openclaw.ai/install/podman)
 - [OpenClaw Multiple Gateways](https://docs.openclaw.ai/gateway/multiple-gateways)
@@ -302,4 +338,3 @@ The included GitHub Actions workflow validates:
 - [Podman kube play](https://docs.podman.io/en/latest/markdown/podman-kube-play.1.html)
 - [Podman kube down](https://docs.podman.io/en/latest/markdown/podman-kube-down.1.html)
 - [Ollama OpenClaw integration](https://docs.ollama.com/integrations/openclaw)
-
