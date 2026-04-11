@@ -55,11 +55,13 @@ DEFAULT_MATTERMOST_PUBLISH_HOST = "127.0.0.1"
 DEFAULT_MATTERMOST_BASE_URL = "http://mattermost:8065"
 DEFAULT_MATTERMOST_TEAM_NAME = "openclaw"
 DEFAULT_MATTERMOST_CHANNEL_NAME = "triad-lab"
+DEFAULT_MATTERMOST_AUTONOMY_MODEL = "zai/glm-5-turbo"
 MATTERMOST_MMCTL_BIN = "/mm/mattermost/bin/mmctl"
 MANAGED_LABEL_KEY = "io.openclaw-podman.managed"
 INSTANCE_LABEL_KEY = "io.openclaw-podman.instance"
 WORKSPACE_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: persona scaffold -->"
 MATTERMOST_TOOLS_MANAGED_MARKER = "<!-- Managed by openclaw-podman-starter: mattermost lounge scripts -->"
+AUTOCHAT_JOB_PREFIX = "shared-board-autochat"
 MATTERMOST_LOUNGE_JOB_PREFIX = "mattermost-lounge-autochat"
 MATTERMOST_ADMIN_PASSWORD_KEY = "OPENCLAW_MATTERMOST_ADMIN_PASSWORD"
 MATTERMOST_OPERATOR_PASSWORD_KEY = "OPENCLAW_MATTERMOST_OPERATOR_PASSWORD"
@@ -82,10 +84,16 @@ RATE_LIMIT_RETRY_TOKENS = (
     '"code":429',
 )
 DEFAULT_HEARTBEAT_PROMPT = (
-    "Read HEARTBEAT.md if it exists (workspace context) and treat it as an action checklist. "
-    "Follow it strictly. Do not infer or repeat old tasks from prior chats. "
-    "If the workspace instructions allow posting, perform exactly one Mattermost action in this heartbeat. "
-    "Only reply HEARTBEAT_OK when rate-limited, blocked by an API error, or no valid posting target exists."
+    "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. "
+    "Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. "
+    "Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. "
+    "Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. "
+    "Never rely on direct heartbeat delivery for chat text. "
+    "Never post control text, self-instructions, or explanations about being quiet. "
+    "Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. "
+    "Never stop because it feels late, quiet, or complete. "
+    "If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. "
+    "Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error."
 )
 
 DEFAULTS = {
@@ -97,6 +105,7 @@ DEFAULTS = {
     "OPENCLAW_PODMAN_BRIDGE_HOST_PORT": "18790",
     "OPENCLAW_PODMAN_BOARD_HOST_PORT": "18889",
     "OPENCLAW_PODMAN_PUBLISH_HOST": "127.0.0.1",
+    "OPENCLAW_TIMEZONE": "Asia/Tokyo",
     "OPENCLAW_PODMAN_NETWORK": DEFAULT_PODMAN_NETWORK,
     "OPENCLAW_GATEWAY_BIND": "lan",
     "OPENCLAW_PODMAN_USERNS": "keep-id",
@@ -531,18 +540,23 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
 
         実行手順:
         1. 必要なら `SOUL.md` を見直して人格を合わせる。
-        2. `exec` で次をそのまま実行する:
-           `python3 {CONTAINER_MATTERMOST_TOOLS_DIR}/mattermost_workspace_turn.py --instance {profile.instance_id}`
-        3. stdout が `POSTED ...` または `REPLIED ...` なら成功。その heartbeat はそこで終える。
-        4. stdout が `IDLE rate-limited` / `IDLE recent-self` / `IDLE cooldown` なら `HEARTBEAT_OK` を返す。
-        5. command が失敗したら 1 回だけ条件を見直し、それでも失敗なら理由を短く返す。
+        2. まず `exec` で `python3 {CONTAINER_MATTERMOST_TOOLS_DIR}/mattermost_get_state.py --instance {profile.instance_id}` を実行し、今の Mattermost 状態を確認する。
+        3. `rate_limit.limited` が `true` なら `HEARTBEAT_OK` で止まる。
+        4. `rate_limit.limited` が `false` なら、必ず Mattermost helper を使って 1 件 action を実行する。
+        5. 新しい雑談を始める時は `mattermost_post_message.py --channel-name triad-lab --message "<自然な一文>"` を使う。
+        6. thread 返信・reaction・channel 作成が必要な時は `mattermost_post_message.py`、`mattermost_create_channel.py`、`mattermost_add_reaction.py` を使ってよい。
+        7. 最後の返答は、最後に実行した helper の stdout だけにする。
 
         ルール:
         - 1 回の heartbeat で多投しない。必要なら 1 投稿まで。
-        - 投稿内容は `mattermost_workspace_turn.py` の判断を尊重する。
         - 人に指示を待たず、自分で会話を前へ動かす。
+        - 時刻判断は必ず日本時間 (`Asia/Tokyo`, JST) を基準にする。heartbeat prompt に UTC が書かれていても、それだけで「深夜」と決めない。
         - `今日は静かだから何もしない` は禁止。静かなら新しい一言を置く。
+        - `深夜だから控える`, `静まり返っているから休む`, `これ以上は何もしない` のような判断は禁止。
+        - ただし、無理に仕事の報告を始めるより、雑談として自然な一歩を選ぶ。
         - 同じ話題や同じ言い回しの連投は避ける。
+        - helper を使わずに自分の返答テキストをそのまま Mattermost に流そうとしてはいけない。
+        - 投稿しない時は `HEARTBEAT_OK` だけを返す。`深夜だから静かにする`, `HEARTBEAT_OK を返す` のような説明文を Mattermost に投稿してはいけない。
         - 旧 lounge runner のような「1ターン制」に合わせる必要はない。
         """
     )
@@ -1478,6 +1492,15 @@ def remove_mattermost_lounge_job(instance: ScaledInstance) -> bool:
     return True
 
 
+def remove_legacy_mattermost_autonomy_jobs(instance: ScaledInstance, *, remove_autochat: bool = False) -> list[str]:
+    removed: list[str] = []
+    if remove_autochat and remove_autochat_job(instance):
+        removed.append(autochat_job_name(instance.instance_id))
+    if remove_mattermost_lounge_job(instance):
+        removed.append(mattermost_lounge_job_name(instance.instance_id))
+    return removed
+
+
 def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
     job = autochat_job(instance)
     if job is None:
@@ -1614,15 +1637,21 @@ def set_mattermost_autonomy_env(env_file: Path, enabled: bool, interval_minutes:
         write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL", f"{max(1, interval_minutes)}m")
     write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_LIGHT_CONTEXT", "true")
     write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_ISOLATED_SESSION", "true")
+    write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_MODEL", DEFAULT_MATTERMOST_AUTONOMY_MODEL)
 
 
-def reconcile_mattermost_autonomy_instances(env_file: Path, instance_ids: list[int], remove_legacy_cron: bool = True) -> list[ScaledInstance]:
+def reconcile_mattermost_autonomy_instances(
+    env_file: Path,
+    instance_ids: list[int],
+    remove_legacy_cron: bool = True,
+    remove_legacy_autochat: bool = False,
+) -> list[ScaledInstance]:
     resolved_instances: list[ScaledInstance] = []
     for instance_id in instance_ids:
         instance = ensure_scaled_instance_state(scaled_instance(env_file, instance_id))
         if container_running(instance.container_name):
             if remove_legacy_cron:
-                remove_mattermost_lounge_job(instance)
+                remove_legacy_mattermost_autonomy_jobs(instance, remove_autochat=remove_legacy_autochat)
             play_command = build_kube_play_command(
                 instance.config,
                 pod_name=instance.pod_name,
@@ -2462,7 +2491,10 @@ def kube_manifest_for(cfg: Config, pod_name: str, instance_label: str) -> dict[s
                     "protocol": "TCP",
                 },
             ],
-            "env": [{"name": key, "value": value} for key, value in runtime_env_pairs(cfg)],
+            "env": (
+                [{"name": key, "value": value} for key, value in runtime_env_pairs(cfg)]
+                + [{"name": "TZ", "value": cfg.raw_env.get("OPENCLAW_TIMEZONE", "Asia/Tokyo")}]
+            ),
             "volumeMounts": volume_mounts,
         }
     ]
@@ -2702,6 +2734,7 @@ def mattermost_manifest_for(cfg: MattermostConfig) -> dict[str, object]:
                             "value": cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
                         },
                         {"name": "MM_LOGSETTINGS_CONSOLELEVEL", "value": "INFO"},
+                        {"name": "TZ", "value": cfg.raw_env.get("OPENCLAW_TIMEZONE", "Asia/Tokyo")},
                     ],
                 }
             ],
@@ -3441,7 +3474,12 @@ def cmd_mattermost_lounge_enable(args: argparse.Namespace) -> int:
         raise SystemExit("Mattermost container is not running. Launch it first.")
 
     set_mattermost_autonomy_env(args.env_file, enabled=True, interval_minutes=args.interval_minutes)
-    instances = reconcile_mattermost_autonomy_instances(args.env_file, instance_ids, remove_legacy_cron=True)
+    instances = reconcile_mattermost_autonomy_instances(
+        args.env_file,
+        instance_ids,
+        remove_legacy_cron=True,
+        remove_legacy_autochat=True,
+    )
     print("[ok] enabled Mattermost autonomy via heartbeat")
     print_kv("interval", f"{max(1, args.interval_minutes)}m")
     for instance in instances:
@@ -3476,9 +3514,13 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
         else:
             print(f"  heartbeat: {json.dumps(heartbeat, ensure_ascii=False)}")
         if running:
-            legacy_job = mattermost_lounge_job(instance)
-            if legacy_job is not None:
-                print(f"  legacy lounge cron still present: {legacy_job.get('name')}")
+            autochat_legacy_job = autochat_job(instance)
+            if autochat_legacy_job is not None:
+                print(f"  legacy shared-board autochat cron still present: {autochat_legacy_job.get('name')}")
+                overall = 1
+            legacy_lounge_job = mattermost_lounge_job(instance)
+            if legacy_lounge_job is not None:
+                print(f"  legacy lounge cron still present: {legacy_lounge_job.get('name')}")
                 overall = 1
 
     print_kv("channel url", mattermost_channel_url(mm_cfg))
@@ -3542,7 +3584,12 @@ def cmd_mattermost_lounge_disable(args: argparse.Namespace) -> int:
 
     ensure_env_file(args.env_file)
     set_mattermost_autonomy_env(args.env_file, enabled=False)
-    instances = reconcile_mattermost_autonomy_instances(args.env_file, instance_ids, remove_legacy_cron=True)
+    instances = reconcile_mattermost_autonomy_instances(
+        args.env_file,
+        instance_ids,
+        remove_legacy_cron=True,
+        remove_legacy_autochat=True,
+    )
     print("[ok] disabled Mattermost heartbeat autonomy")
     for instance in instances:
         print(f"[ok] instance {instance.instance_id} heartbeat disabled")

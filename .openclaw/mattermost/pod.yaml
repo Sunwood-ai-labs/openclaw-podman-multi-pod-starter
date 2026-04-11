@@ -62,6 +62,10 @@
           {
             "name": "MM_LOGSETTINGS_CONSOLELEVEL",
             "value": "INFO"
+          },
+          {
+            "name": "TZ",
+            "value": "Asia/Tokyo"
           }
         ]
       }

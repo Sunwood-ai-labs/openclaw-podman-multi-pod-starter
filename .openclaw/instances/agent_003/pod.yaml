@@ -37,6 +37,10 @@
           {
             "name": "OPENCLAW_GATEWAY_BIND",
             "value": "lan"
+          },
+          {
+            "name": "TZ",
+            "value": "Asia/Tokyo"
           }
         ],
         "volumeMounts": [

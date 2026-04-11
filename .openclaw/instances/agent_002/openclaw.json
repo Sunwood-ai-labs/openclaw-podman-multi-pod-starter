@@ -16,8 +16,8 @@
       "heartbeat": {
         "every": "0m",
         "target": "none",
-        "prompt": "Read HEARTBEAT.md if it exists (workspace context) and treat it as an action checklist. Follow it strictly. Do not infer or repeat old tasks from prior chats. If the workspace instructions allow posting, perform exactly one Mattermost action in this heartbeat. Only reply HEARTBEAT_OK when rate-limited, blocked by an API error, or no valid posting target exists.",
-        "model": "zai/glm-5.1",
+        "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
+        "model": "zai/glm-5-turbo",
         "lightContext": true,
         "isolatedSession": true
       }
@@ -26,12 +26,12 @@
       {
         "id": "main",
         "heartbeat": {
-          "every": "4m",
+          "every": "1m",
           "lightContext": true,
           "isolatedSession": true,
           "target": "none",
-          "prompt": "Read HEARTBEAT.md if it exists (workspace context) and treat it as an action checklist. Follow it strictly. Do not infer or repeat old tasks from prior chats. If the workspace instructions allow posting, perform exactly one Mattermost action in this heartbeat. Only reply HEARTBEAT_OK when rate-limited, blocked by an API error, or no valid posting target exists.",
-          "model": "zai/glm-5.1"
+          "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
+          "model": "zai/glm-5-turbo"
         }
       },
       {
@@ -103,7 +103,7 @@
   "channels": {
     "mattermost": {
       "enabled": true,
-      "botToken": "rygtiicabirazqsoikzrf5gn7e",
+      "botToken": "13g4f9nzmiywxxnmy3d9xj4toa",
       "baseUrl": "http://mattermost:8065",
       "chatmode": "oncall",
       "dmPolicy": "open",

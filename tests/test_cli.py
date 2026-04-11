@@ -313,8 +313,11 @@ class CliTests(unittest.TestCase):
             self.assertEqual(openclaw_payload["channels"]["mattermost"]["botToken"], "mm-token-1")
             self.assertNotIn("meta", openclaw_payload)
 
-            env_names = {entry["name"] for entry in pod_payload["spec"]["containers"][0]["env"]}
-            self.assertEqual(env_names, {"OPENCLAW_GATEWAY_BIND"})
+            env_entries = {
+                entry["name"]: entry["value"] for entry in pod_payload["spec"]["containers"][0]["env"]
+            }
+            self.assertEqual(set(env_entries), {"OPENCLAW_GATEWAY_BIND", "TZ"})
+            self.assertEqual(env_entries["TZ"], "Asia/Tokyo")
 
     def test_mattermost_user_id_returns_empty_on_404(self) -> None:
         cfg = cli.MattermostConfig(
@@ -341,6 +344,27 @@ class CliTests(unittest.TestCase):
             ),
         ):
             self.assertEqual(cli.mattermost_user_id(cfg, "iori", "token"), "")
+
+    def test_mattermost_lounge_disable_removes_legacy_autochat(self) -> None:
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=3)
+
+        with mock.patch.object(cli, "ensure_env_file"), mock.patch.object(
+            cli, "set_mattermost_autonomy_env"
+        ) as set_env_mock, mock.patch.object(
+            cli,
+            "reconcile_mattermost_autonomy_instances",
+            return_value=[self.build_instance()],
+        ) as reconcile_mock:
+            exit_code = cli.cmd_mattermost_lounge_disable(args)
+
+        self.assertEqual(exit_code, 0)
+        set_env_mock.assert_called_once_with(args.env_file, enabled=False)
+        reconcile_mock.assert_called_once_with(
+            args.env_file,
+            [1, 2, 3],
+            remove_legacy_cron=True,
+            remove_legacy_autochat=True,
+        )
 
     def test_ensure_openclaw_config_supports_openrouter_model_ref(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
