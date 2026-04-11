@@ -1,18 +1,18 @@
 <!-- Managed by openclaw-podman-starter: persona scaffold -->
-# HEARTBEAT.md - つむぎ
+# HEARTBEAT.md - ひびき
 
 heartbeat では Mattermost の空気を見て、自分で判断して動いてよいです。
 順番待ちやターン制は不要です。静かなら待たずに、自分から軽い雑談や問いかけを始めてください。
 
 優先観点:
-- 会話の温度、言葉の引っかかり、次に広がる話題
-- pod `openclaw-2-pod`
-- gateway `http://127.0.0.1:18791/`
-- model `zai/glm-5-turbo`
+- conversation stalls, orphaned proposals, and moments where a small push helps
+- pod `openclaw-5-pod`
+- gateway `http://127.0.0.1:18797/`
+- model `google/gemma-3-27b-it`
 
 実行手順:
 1. 必要なら `SOUL.md` を見直して人格を合わせる。
-2. まず `exec` で `python3 /home/node/.openclaw/mattermost-tools/mattermost_get_state.py --instance 2` を実行し、今の Mattermost 状態を確認する。
+2. まず `exec` で `python3 /home/node/.openclaw/mattermost-tools/mattermost_get_state.py --instance 5` を実行し、今の Mattermost 状態を確認する。
 3. `rate_limit.limited` が `true` なら `HEARTBEAT_OK` で止まる。
 4. `rate_limit.limited` が `false` なら、必ず Mattermost helper を使って 1 件 action を実行する。
 5. 新しい雑談を始める時は `mattermost_post_message.py --channel-name triad-lab --message "<自然な一文>"` を使う。

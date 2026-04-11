@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "/home/node/.openclaw/workspace",
       "model": {
-        "primary": "zai/glm-5-turbo",
+        "primary": "google/gemma-4-31b-it",
         "fallbacks": [
           "zai/glm-5-turbo",
           "zai/glm-5",
@@ -17,7 +17,7 @@
         "every": "0m",
         "target": "none",
         "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Your first step on each heartbeat must be to run mattermost_get_state.py for your instance and decide from that current JSON only. Do not infer from previous heartbeat errors, previous posts, or previous API failures. If you answer without first running mattermost_get_state.py in this heartbeat, that is a failure. If rate_limit.limited is false, you must execute exactly one Mattermost helper action in this heartbeat. Your final answer must be only the stdout from the last helper you executed, or HEARTBEAT_OK. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
-        "model": "zai/glm-5-turbo",
+        "model": "google/gemma-4-31b-it",
         "lightContext": true,
         "isolatedSession": true
       }
@@ -31,36 +31,8 @@
           "isolatedSession": true,
           "target": "none",
           "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Your first step on each heartbeat must be to run mattermost_get_state.py for your instance and decide from that current JSON only. Do not infer from previous heartbeat errors, previous posts, or previous API failures. If you answer without first running mattermost_get_state.py in this heartbeat, that is a failure. If rate_limit.limited is false, you must execute exactly one Mattermost helper action in this heartbeat. Your final answer must be only the stdout from the last helper you executed, or HEARTBEAT_OK. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
-          "model": "zai/glm-5-turbo"
+          "model": "google/gemma-4-31b-it"
         }
-      },
-      {
-        "id": "autochat-lyra",
-        "name": "autochat-lyra",
-        "workspace": "/home/node/.openclaw/workspace",
-        "agentDir": "/home/node/.openclaw/agents/autochat-lyra/agent",
-        "model": "zai/glm-5-turbo"
-      },
-      {
-        "id": "discuss-lyra",
-        "name": "discuss-lyra",
-        "workspace": "/home/node/.openclaw/workspace",
-        "agentDir": "/home/node/.openclaw/agents/discuss-lyra/agent",
-        "model": "zai/glm-5-turbo"
-      },
-      {
-        "id": "mattermost-lounge-tsumugi",
-        "name": "mattermost-lounge-tsumugi",
-        "workspace": "/home/node/.openclaw/workspace",
-        "agentDir": "/home/node/.openclaw/agents/mattermost-lounge-tsumugi/agent",
-        "model": "zai/glm-5-turbo"
-      },
-      {
-        "id": "persona-verify-tsumugi",
-        "name": "persona-verify-tsumugi",
-        "workspace": "/home/node/.openclaw/workspace",
-        "agentDir": "/home/node/.openclaw/agents/persona-verify-tsumugi/agent",
-        "model": "zai/glm-5-turbo"
       }
     ]
   },
@@ -68,9 +40,14 @@
     "mode": "local",
     "controlUi": {
       "allowedOrigins": [
-        "http://127.0.0.1:18791",
-        "http://localhost:18791"
+        "http://127.0.0.1:18795",
+        "http://localhost:18795"
       ]
+    }
+  },
+  "auth": {
+    "cooldowns": {
+      "rateLimitedProfileRotations": 10
     }
   },
   "tools": {
@@ -86,19 +63,13 @@
   },
   "plugins": {
     "entries": {
-      "ollama": {
-        "enabled": false
+      "google": {
+        "enabled": true
       },
       "mattermost": {
         "enabled": true
       },
-      "openrouter": {
-        "enabled": false
-      },
       "zai": {
-        "enabled": true
-      },
-      "google": {
         "enabled": false
       }
     }
@@ -106,7 +77,7 @@
   "channels": {
     "mattermost": {
       "enabled": true,
-      "botToken": "mwo5o5jy5fntjxj695xypkijxc",
+      "botToken": "wu4xfmhijjbpikot9co3ptarqo",
       "baseUrl": "http://mattermost:8065",
       "chatmode": "oncall",
       "dmPolicy": "open",
@@ -122,9 +93,63 @@
       }
     }
   },
-  "auth": {
-    "cooldowns": {
-      "rateLimitedProfileRotations": 10
+  "models": {
+    "providers": {
+      "google": {
+        "api": "google-generative-ai",
+        "apiKey": "${GEMINI_API_KEY}",
+        "models": [
+          {
+            "id": "gemma-4-31b-it",
+            "name": "Gemma 4 31B It",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 1310720
+          },
+          {
+            "id": "gemma-4-26b-a4b-it",
+            "name": "Gemma 4 26B A4B It",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 1310720
+          },
+          {
+            "id": "gemma-3-27b-it",
+            "name": "Gemma 3 27B It",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 1310720
+          }
+        ],
+        "baseUrl": "https://generativelanguage.googleapis.com"
+      }
     }
   }
 }

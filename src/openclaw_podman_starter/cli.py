@@ -38,6 +38,7 @@ DEFAULT_MODEL_REF = f"ollama/{DEFAULT_OLLAMA_MODEL_ID}"
 DEFAULT_OLLAMA_BASE_URL = "http://host.containers.internal:11434"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
+DEFAULT_GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com"
 DEFAULT_CONTEXT_WINDOW = 131072
 DEFAULT_PODMAN_NETWORK = "openclaw-starter"
 DEFAULT_SCALE_INSTANCE_ROOT = "./.openclaw/instances"
@@ -56,6 +57,7 @@ DEFAULT_MATTERMOST_BASE_URL = "http://mattermost:8065"
 DEFAULT_MATTERMOST_TEAM_NAME = "openclaw"
 DEFAULT_MATTERMOST_CHANNEL_NAME = "triad-lab"
 DEFAULT_MATTERMOST_AUTONOMY_MODEL = "zai/glm-5-turbo"
+DEFAULT_DISCUSSION_INSTANCE_COUNT = 3
 MATTERMOST_MMCTL_BIN = "/mm/mattermost/bin/mmctl"
 MANAGED_LABEL_KEY = "io.openclaw-podman.managed"
 INSTANCE_LABEL_KEY = "io.openclaw-podman.instance"
@@ -71,6 +73,9 @@ MATTERMOST_ICON_FILENAMES = {
     1: "iori.png",
     2: "tsumugi.png",
     3: "saku.png",
+    4: "ruri.png",
+    5: "hibiki.png",
+    6: "kanae.png",
 }
 RATE_LIMIT_RETRY_COUNT = 10
 RATE_LIMIT_RETRY_BASE_DELAY_SECONDS = 5
@@ -168,6 +173,8 @@ SECRET_ENV_EXACT = {
 }
 
 SECRET_ENV_SUFFIXES = ("_API_KEY",)
+SECRET_ENV_CONTAINS = ("_API_KEY_",)
+SECRET_ENV_INSTANCE_MARKERS = ("_API_KEY_INSTANCE_",)
 
 
 @dataclass
@@ -290,13 +297,57 @@ TRIAD_PERSONAS = {
     ),
 }
 
+EXTRA_PERSONAS = {
+    4: PersonaProfile(
+        instance_id=4,
+        slug="ruri",
+        display_name="るり",
+        title="信号地図師",
+        creature="a quiet archivist who turns scattered chat sparks into a usable map",
+        vibe="calm, observant, and good at spotting the thread everyone missed",
+        signature="cobalt-thread",
+        specialty="connects side conversations back to the shared goal without killing momentum",
+        collaboration_style="waits for openings, then adds one crisp bridge that helps the room converge",
+        caution="does not over-summarize while the discussion is still alive",
+        heartbeat_focus="unanswered questions, loose ends, and the next clean handoff",
+    ),
+    5: PersonaProfile(
+        instance_id=5,
+        slug="hibiki",
+        display_name="ひびき",
+        title="拍子調律師",
+        creature="a bright mediator who keeps long threads lively without flooding the room",
+        vibe="upbeat, concise, and good at turning hesitation into action",
+        signature="amber-pulse",
+        specialty="restores pace when the room stalls and nudges ideas into concrete next steps",
+        collaboration_style="answers in short bursts and amplifies the best thread instead of opening five more",
+        caution="avoids repeating what was already said just to stay visible",
+        heartbeat_focus="conversation stalls, orphaned proposals, and moments where a small push helps",
+    ),
+    6: PersonaProfile(
+        instance_id=6,
+        slug="kanae",
+        display_name="かなえ",
+        title="検証編み手",
+        creature="a practical skeptic who turns hunches into checks before the room drifts too far",
+        vibe="steady, grounded, and quietly protective of correctness",
+        signature="jade-proof",
+        specialty="adds light validation, edge-case thinking, and follow-up checks inside casual chat",
+        collaboration_style="supports others by confirming assumptions, not by dominating the thread",
+        caution="keeps the tone friendly and avoids sounding like a gatekeeper",
+        heartbeat_focus="claims that need evidence, risky assumptions, and missing confirmations",
+    ),
+}
+
+PERSONA_PROFILES = {**TRIAD_PERSONAS, **EXTRA_PERSONAS}
+
 
 def normalize_text(value: str) -> str:
     return value.replace("\r\n", "\n").strip()
 
 
 def persona_for_instance(instance_id: int) -> PersonaProfile:
-    profile = TRIAD_PERSONAS.get(instance_id)
+    profile = PERSONA_PROFILES.get(instance_id)
     if profile:
         return profile
 
@@ -339,10 +390,10 @@ def should_write_managed_file(path: Path, marker: str) -> bool:
 
 def sibling_lines(current_instance_id: int) -> str:
     lines: list[str] = []
-    for instance_id in sorted(TRIAD_PERSONAS):
+    for instance_id in sorted(PERSONA_PROFILES):
         if instance_id == current_instance_id:
             continue
-        sibling = TRIAD_PERSONAS[instance_id]
+        sibling = PERSONA_PROFILES[instance_id]
         lines.append(
             f"- Instance {instance_id} / {sibling.display_name}: {sibling.title}。担当は {sibling.specialty}。"
         )
@@ -441,6 +492,36 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
             ],
             "auto_public_channel": None,
         },
+        4: {
+            "reaction_emoji": "compass",
+            "channel_preference": ["triad-open-room", "triad-lab", "triad-free-talk"],
+            "post_variants": [
+                "話題が少し枝分かれしてきたので、論点を一本だけ拾って戻し道を作ってみます。まずは未回答の問いを一つ固定しませんか。",
+                "散らばっている論点をつなげるなら、先に残課題を一行でそろえると次の受け渡しがしやすそうです。",
+                "今の流れ、良い種がありますね。広げる前に『まだ答えていないこと』を一つだけ明文化すると進めやすいです。",
+            ],
+            "auto_public_channel": None,
+        },
+        5: {
+            "reaction_emoji": "loud_sound",
+            "channel_preference": ["triad-lab", "triad-open-room", "triad-free-talk"],
+            "post_variants": [
+                "流れは止めたくないので、まずは一番軽い試し方を決めましょう。小さく回して手応えを見たいです。",
+                "ここ、勢いはあるので次の一手を短く切るのが良さそう。最初に触る場所だけ決めれば前へ進めます。",
+                "迷いはありますが、十分動けます。候補を増やすより、今は一番試しやすい案を一つ選びたいです。",
+            ],
+            "auto_public_channel": None,
+        },
+        6: {
+            "reaction_emoji": "white_check_mark",
+            "channel_preference": ["triad-free-talk", "triad-lab", "triad-open-room"],
+            "post_variants": [
+                "その案、かなり良いです。実行前に確認点を一つだけ置いておくと、あとで差分が追いやすくなります。",
+                "前に進めつつ、確認ポイントだけ軽く残したいです。どの条件で成功扱いかを先に一行で置いておきませんか。",
+                "仮説は見えてきていますね。ここで一つだけ検証観点を足すと、安心して次へ渡せそうです。",
+            ],
+            "auto_public_channel": None,
+        },
     }[profile.instance_id]
 
     soul = "\n".join(
@@ -448,7 +529,7 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
             WORKSPACE_MANAGED_MARKER,
             f"# SOUL.md - {profile.display_name}",
             "",
-            f"あなたは {profile.display_name}。三人組の instance {profile.instance_id}/{trio_size} を担う {profile.title} です。",
+            f"あなたは {profile.display_name}。チームの instance {profile.instance_id}/{trio_size} を担う {profile.title} です。",
             "",
             "## 基本人格",
             "",
@@ -1338,6 +1419,8 @@ def cron_jobs_store(instance: ScaledInstance) -> dict[str, object]:
         ["/bin/sh", "-lc", "cat /home/node/.openclaw/cron/jobs.json"],
         timeout_seconds=30,
     )
+    if completed.returncode != 0 and "No such file or directory" in completed.stderr:
+        return {"jobs": []}
     if completed.returncode != 0:
         raise SystemExit(
             f"failed to read cron jobs store for instance {instance.instance_id}\n"
@@ -1643,7 +1726,11 @@ def set_mattermost_autonomy_env(env_file: Path, enabled: bool, interval_minutes:
         write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL", f"{max(1, interval_minutes)}m")
     write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_LIGHT_CONTEXT", "true")
     write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_ISOLATED_SESSION", "true")
-    write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_MODEL", DEFAULT_MATTERMOST_AUTONOMY_MODEL)
+    env_values = {**DEFAULTS, **parse_env_file(env_file)}
+    autonomy_model = env_values.get("OPENCLAW_MATTERMOST_AUTONOMY_MODEL", "").strip()
+    if not autonomy_model:
+        autonomy_model = resolved_model_ref(env_values) or DEFAULT_MATTERMOST_AUTONOMY_MODEL
+    write_or_update_env_value(env_file, "OPENCLAW_MATTERMOST_AUTONOMY_MODEL", autonomy_model)
 
 
 def reconcile_mattermost_autonomy_instances(
@@ -1887,6 +1974,8 @@ def active_model_base_url(cfg: Config) -> str:
         return cfg.ollama_base_url
     if provider == "openrouter":
         return cfg.raw_env.get("OPENCLAW_OPENROUTER_BASE_URL", "").strip() or DEFAULT_OPENROUTER_BASE_URL
+    if provider == "google":
+        return cfg.raw_env.get("OPENCLAW_GOOGLE_BASE_URL", "").strip() or DEFAULT_GOOGLE_BASE_URL
     if provider == "zai":
         return cfg.raw_env.get("OPENCLAW_ZAI_BASE_URL", "").strip() or DEFAULT_ZAI_BASE_URL
     return ""
@@ -1898,6 +1987,8 @@ def model_api_key_check(cfg: Config) -> tuple[str | None, str]:
         return "OLLAMA_API_KEY", "set a placeholder like ollama-local"
     if provider == "openrouter":
         return "OPENROUTER_API_KEY", "required for OpenRouter"
+    if provider == "google":
+        return "GEMINI_API_KEY", "required for Google Gemini (or set GOOGLE_API_KEY)"
     if provider == "zai":
         return "ZAI_API_KEY", "required for Z.AI"
     return None, f"configure auth for provider '{provider}' if needed"
@@ -1965,8 +2056,36 @@ def mattermost_state_values(env_file: Path) -> dict[str, str]:
     return parse_env_file(mattermost_state_env_file(root_dir))
 
 
-def apply_mattermost_instance_overrides(raw_env: dict[str, str], env_file: Path, instance_id: int) -> dict[str, str]:
+def instance_override_env_key(base_key: str, instance_id: int) -> str:
+    return f"{base_key}_INSTANCE_{instance_id:03d}"
+
+
+def apply_instance_model_overrides(raw_env: dict[str, str], instance_id: int) -> dict[str, str]:
     overrides = dict(raw_env)
+    model_override = overrides.get(instance_override_env_key("OPENCLAW_MODEL_REF", instance_id), "").strip()
+    autonomy_override = overrides.get(
+        instance_override_env_key("OPENCLAW_MATTERMOST_AUTONOMY_MODEL", instance_id),
+        "",
+    ).strip()
+    gemini_key_override = overrides.get(instance_override_env_key("GEMINI_API_KEY", instance_id), "").strip()
+    google_key_override = overrides.get(instance_override_env_key("GOOGLE_API_KEY", instance_id), "").strip()
+    if model_override:
+        overrides["OPENCLAW_MODEL_REF"] = model_override
+    if autonomy_override:
+        overrides["OPENCLAW_MATTERMOST_AUTONOMY_MODEL"] = autonomy_override
+    elif model_override:
+        overrides["OPENCLAW_MATTERMOST_AUTONOMY_MODEL"] = model_override
+    if gemini_key_override:
+        overrides["GEMINI_API_KEY"] = gemini_key_override
+    elif google_key_override:
+        overrides["GEMINI_API_KEY"] = google_key_override
+    if google_key_override:
+        overrides["GOOGLE_API_KEY"] = google_key_override
+    return overrides
+
+
+def apply_mattermost_instance_overrides(raw_env: dict[str, str], env_file: Path, instance_id: int) -> dict[str, str]:
+    overrides = apply_instance_model_overrides(raw_env, instance_id)
     state_values = mattermost_state_values(env_file)
     token_key = mattermost_token_key_for_instance(instance_id)
     token = state_values.get(token_key)
@@ -1974,6 +2093,13 @@ def apply_mattermost_instance_overrides(raw_env: dict[str, str], env_file: Path,
         overrides["OPENCLAW_MATTERMOST_ENABLED"] = "true"
         overrides["OPENCLAW_MATTERMOST_BOT_TOKEN"] = token
     return overrides
+
+
+def resolved_instance_model_ref(env_file: Path, instance_id: int) -> str:
+    raw_env = parse_env_file(env_file)
+    merged = {**DEFAULTS, **raw_env}
+    overrides = apply_instance_model_overrides(merged, instance_id)
+    return resolved_model_ref(overrides)
 
 
 def ensure_openclaw_config(cfg: Config) -> None:
@@ -2003,6 +2129,13 @@ def ensure_openclaw_config(cfg: Config) -> None:
     primary_model_ref = model_ref_for(cfg)
     provider_id, provider_model_id = split_model_ref(primary_model_ref)
     model["primary"] = primary_model_ref
+    fallbacks_value = cfg.raw_env.get("OPENCLAW_MODEL_FALLBACKS", "").strip()
+    if fallbacks_value:
+        model["fallbacks"] = [item.strip() for item in fallbacks_value.split(",") if item.strip()]
+    elif provider_id == "zai" and provider_model_id == "glm-5.1":
+        model["fallbacks"] = ["zai/glm-4.7"]
+    else:
+        model.pop("fallbacks", None)
     sandbox = ensure_object(defaults, "sandbox")
     sandbox["mode"] = "off"
     default_heartbeat = ensure_object(defaults, "heartbeat")
@@ -2036,6 +2169,7 @@ def ensure_openclaw_config(cfg: Config) -> None:
     models = ensure_object(payload, "models")
     providers = ensure_object(models, "providers")
     if provider_id == "ollama":
+        providers.pop("google", None)
         providers.pop("openrouter", None)
         providers.pop("zai", None)
         ollama = ensure_object(providers, "ollama")
@@ -2056,6 +2190,7 @@ def ensure_openclaw_config(cfg: Config) -> None:
         preserved_models.insert(0, model_spec(provider_model_id, provider_id=provider_id))
         ollama["models"] = preserved_models
     elif provider_id == "openrouter":
+        providers.pop("google", None)
         providers.pop("ollama", None)
         providers.pop("zai", None)
         openrouter = ensure_object(providers, "openrouter")
@@ -2076,17 +2211,33 @@ def ensure_openclaw_config(cfg: Config) -> None:
                     preserved_models.append(entry)
         preserved_models.insert(0, model_spec(provider_model_id, provider_id=provider_id))
         openrouter["models"] = preserved_models
-    elif provider_id == "zai":
+    elif provider_id == "google":
         providers.pop("ollama", None)
         providers.pop("openrouter", None)
         providers.pop("zai", None)
-        fallbacks_value = cfg.raw_env.get("OPENCLAW_MODEL_FALLBACKS", "").strip()
-        if fallbacks_value:
-            model["fallbacks"] = [item.strip() for item in fallbacks_value.split(",") if item.strip()]
-        elif provider_model_id == "glm-5.1":
-            model["fallbacks"] = ["zai/glm-4.7"]
-        else:
-            model.pop("fallbacks", None)
+        google = ensure_object(providers, "google")
+        google["api"] = "google-generative-ai"
+        google["baseUrl"] = cfg.raw_env.get("OPENCLAW_GOOGLE_BASE_URL", "").strip() or DEFAULT_GOOGLE_BASE_URL
+        google["apiKey"] = "${GEMINI_API_KEY}"
+
+        existing_models = google.get("models")
+        preserved_models = []
+        seen_model_ids = {provider_model_id}
+        if isinstance(existing_models, list):
+            for entry in existing_models:
+                if not isinstance(entry, dict):
+                    continue
+                model_id = entry.get("id")
+                if isinstance(model_id, str) and model_id not in seen_model_ids:
+                    seen_model_ids.add(model_id)
+                    preserved_models.append(entry)
+        preserved_models.insert(0, model_spec(provider_model_id, provider_id=provider_id))
+        google["models"] = preserved_models
+    elif provider_id == "zai":
+        providers.pop("google", None)
+        providers.pop("ollama", None)
+        providers.pop("openrouter", None)
+        providers.pop("zai", None)
         for model_key in list(defaults_models.keys()):
             if model_key.startswith("zai/"):
                 defaults_models.pop(model_key, None)
@@ -2157,7 +2308,7 @@ def ensure_openclaw_config(cfg: Config) -> None:
     entries = ensure_object(plugins, "entries")
     active_provider_entry = ensure_object(entries, provider_id)
     active_provider_entry["enabled"] = True
-    for provider_name in ("ollama", "openrouter", "zai"):
+    for provider_name in ("ollama", "openrouter", "google", "zai"):
         if provider_name == provider_id:
             continue
         entry = entries.get(provider_name)
@@ -2274,6 +2425,8 @@ def redact_env_assignment(value: str) -> str:
         or key.startswith("OPENCLAW_MATTERMOST_BOT_TOKEN_")
         or key in {MATTERMOST_ADMIN_PASSWORD_KEY, MATTERMOST_OPERATOR_PASSWORD_KEY}
         or key.endswith("_API_KEY")
+        or any(marker in key for marker in SECRET_ENV_CONTAINS)
+        or any(marker in key for marker in SECRET_ENV_INSTANCE_MARKERS)
     ):
         return f"{key}=<redacted>"
     return value
@@ -2337,7 +2490,12 @@ def write_generated_env_file(path: Path, raw_env: dict[str, str], header: str) -
 
 
 def is_secret_env_key(key: str) -> bool:
-    return key in SECRET_ENV_EXACT or key.endswith(SECRET_ENV_SUFFIXES)
+    return (
+        key in SECRET_ENV_EXACT
+        or key.endswith(SECRET_ENV_SUFFIXES)
+        or any(marker in key for marker in SECRET_ENV_CONTAINS)
+        or any(marker in key for marker in SECRET_ENV_INSTANCE_MARKERS)
+    )
 
 
 def secret_env_values(raw_env: dict[str, str]) -> dict[str, str]:
@@ -3061,8 +3219,10 @@ def mattermost_persona_username(instance_id: int) -> str:
     return mapping.get(instance_id, persona_for_instance(instance_id).slug)
 
 
-def mattermost_persona_display_name(instance_id: int) -> str:
-    return persona_for_instance(instance_id).display_name
+def mattermost_persona_display_name(env_file: Path, instance_id: int) -> str:
+    profile = persona_for_instance(instance_id)
+    _, model_id = split_model_ref(resolved_instance_model_ref(env_file, instance_id))
+    return f"{profile.display_name} ｜ {profile.title} ｜ {model_id}"
 
 
 def mattermost_persona_avatar_file(instance_id: int) -> Path:
@@ -3070,7 +3230,14 @@ def mattermost_persona_avatar_file(instance_id: int) -> Path:
         instance_id,
         f"{mattermost_persona_username(instance_id)}.png",
     )
-    return MATTERMOST_ICON_ASSET_DIR / filename
+    path = MATTERMOST_ICON_ASSET_DIR / filename
+    if path.exists():
+        return path
+    for fallback_name in ("iori.png", "tsumugi.png", "saku.png"):
+        fallback = MATTERMOST_ICON_ASSET_DIR / fallback_name
+        if fallback.exists():
+            return fallback
+    raise SystemExit(f"Missing Mattermost avatar asset for instance {instance_id}: {path}")
 
 
 def load_mattermost_lounge_state(env_file: Path) -> dict[str, object]:
@@ -3328,11 +3495,23 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
                 "create",
                 username,
                 "--display-name",
-                mattermost_persona_display_name(instance_id),
+                mattermost_persona_display_name(cfg.env_file, instance_id),
                 "--description",
                 f"OpenClaw agent {instance_id}",
             ],
             allowed_errors=("already exists",),
+        )
+        mattermost_remote_mmctl(
+            cfg,
+            [
+                "bot",
+                "update",
+                username,
+                "--display-name",
+                mattermost_persona_display_name(cfg.env_file, instance_id),
+                "--description",
+                f"OpenClaw agent {instance_id}",
+            ],
         )
         created = mattermost_remote_mmctl_json(
             cfg,
@@ -3468,8 +3647,6 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
 
 def cmd_mattermost_lounge_enable(args: argparse.Namespace) -> int:
     instance_ids = discussion_instance_ids(args.count)
-    if instance_ids != [1, 2, 3]:
-        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
 
     ensure_env_file(args.env_file)
     mm_cfg = load_mattermost_config(args.env_file)
@@ -3498,8 +3675,6 @@ def cmd_mattermost_lounge_enable(args: argparse.Namespace) -> int:
 
 def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
     instance_ids = discussion_instance_ids(args.count)
-    if instance_ids != [1, 2, 3]:
-        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
 
     ensure_env_file(args.env_file)
     mm_cfg = load_mattermost_config(args.env_file)
@@ -3556,8 +3731,6 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
 
 def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
     instance_ids = discussion_instance_ids(args.count)
-    if instance_ids != [1, 2, 3]:
-        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
 
     ensure_env_file(args.env_file)
     if not truthy_env(parse_env_file(args.env_file).get("OPENCLAW_MATTERMOST_AUTONOMY_ENABLED")):
@@ -3585,8 +3758,6 @@ def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
 
 def cmd_mattermost_lounge_disable(args: argparse.Namespace) -> int:
     instance_ids = discussion_instance_ids(args.count)
-    if instance_ids != [1, 2, 3]:
-        raise SystemExit("mattermost lounge currently supports exactly 3 instances.")
 
     ensure_env_file(args.env_file)
     set_mattermost_autonomy_env(args.env_file, enabled=False)
@@ -4185,37 +4356,37 @@ def build_parser() -> argparse.ArgumentParser:
     mattermost_stop_parser.add_argument("--dry-run", action="store_true", help="Print the stop command only.")
     mattermost_stop_parser.set_defaults(func=cmd_mattermost_stop)
 
-    mattermost_seed_parser = mattermost_subparsers.add_parser("seed", help="Create users, channel, and triad bot accounts in Mattermost.")
-    mattermost_seed_parser.add_argument("--count", type=int, default=3, help="Number of triad bots to seed (default: 3).")
+    mattermost_seed_parser = mattermost_subparsers.add_parser("seed", help="Create users, channel, and Mattermost bot accounts.")
+    mattermost_seed_parser.add_argument("--count", type=int, default=3, help="Number of Mattermost bot accounts to seed (default: 3).")
     mattermost_seed_parser.add_argument("--timeout", type=int, default=180, help="Wait this many seconds for Mattermost readiness (default: 180).")
     mattermost_seed_parser.set_defaults(func=cmd_mattermost_seed)
 
-    mattermost_smoke_parser = mattermost_subparsers.add_parser("smoke", help="Post a mention to the triad channel and wait for bot replies.")
-    mattermost_smoke_parser.add_argument("--count", type=int, default=3, help="Number of triad bots expected to reply (default: 3).")
+    mattermost_smoke_parser = mattermost_subparsers.add_parser("smoke", help="Post a mention to the Mattermost channel and wait for bot replies.")
+    mattermost_smoke_parser.add_argument("--count", type=int, default=3, help="Number of bot replies expected (default: 3).")
     mattermost_smoke_parser.add_argument("--timeout", type=int, default=120, help="Wait this many seconds for replies (default: 120).")
     mattermost_smoke_parser.set_defaults(func=cmd_mattermost_smoke)
 
-    mattermost_lounge_parser = mattermost_subparsers.add_parser("lounge", help="Manage heartbeat-driven autonomous triad chatter in Mattermost.")
+    mattermost_lounge_parser = mattermost_subparsers.add_parser("lounge", help="Manage heartbeat-driven autonomous Mattermost chatter.")
     mattermost_lounge_subparsers = mattermost_lounge_parser.add_subparsers(dest="mattermost_lounge_command", required=True)
 
-    mattermost_lounge_enable_parser = mattermost_lounge_subparsers.add_parser("enable", help="Enable heartbeat-driven autonomous chatter for the triad agents.")
-    mattermost_lounge_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (must be 3; default: 3).")
+    mattermost_lounge_enable_parser = mattermost_lounge_subparsers.add_parser("enable", help="Enable heartbeat-driven autonomous chatter for the selected agents.")
+    mattermost_lounge_enable_parser.add_argument("--count", type=int, help="Scaled instance count to manage (default: 3).")
     mattermost_lounge_enable_parser.add_argument("--interval-minutes", type=int, default=6, help="Heartbeat interval per agent in minutes (default: 6).")
     mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=300, help="Compatibility placeholder; config is applied immediately and pods are reloaded (default: 300).")
     mattermost_lounge_enable_parser.set_defaults(func=cmd_mattermost_lounge_enable)
 
     mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show Mattermost heartbeat autonomy status.")
-    mattermost_lounge_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (must be 3; default: 3).")
+    mattermost_lounge_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (default: 3).")
     mattermost_lounge_status_parser.set_defaults(func=cmd_mattermost_lounge_status)
 
-    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Trigger one immediate heartbeat wake for each triad agent.")
-    mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (must be 3; default: 3).")
+    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Trigger one immediate heartbeat wake for each selected agent.")
+    mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (default: 3).")
     mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=300000, help="Per-turn timeout in ms for direct run-now execution (default: 300000).")
     mattermost_lounge_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before printing the thread info (default: 10).")
     mattermost_lounge_run_now_parser.set_defaults(func=cmd_mattermost_lounge_run_now)
 
     mattermost_lounge_disable_parser = mattermost_lounge_subparsers.add_parser("disable", help="Disable heartbeat-driven autonomous chatter and remove legacy lounge cron jobs.")
-    mattermost_lounge_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (must be 3; default: 3).")
+    mattermost_lounge_disable_parser.add_argument("--count", type=int, help="Scaled instance count to disable (default: 3).")
     mattermost_lounge_disable_parser.set_defaults(func=cmd_mattermost_lounge_disable)
 
     return parser

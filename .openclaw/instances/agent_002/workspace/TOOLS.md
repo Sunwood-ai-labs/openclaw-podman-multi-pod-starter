@@ -6,7 +6,7 @@
 - Instance: 2
 - Pod: `openclaw-2-pod`
 - Container: `openclaw-2`
-- Model: `zai/glm-5.1`
+- Model: `zai/glm-5-turbo`
 - Gateway: `http://127.0.0.1:18791/`
 - Bridge: `http://127.0.0.1:18792/`
 - Workspace: `D:\Prj\openclaw-podman-starter\.openclaw\instances\agent_002\workspace`

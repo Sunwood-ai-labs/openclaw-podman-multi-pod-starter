@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "/home/node/.openclaw/workspace",
       "model": {
-        "primary": "zai/glm-5.1",
+        "primary": "zai/glm-5",
         "fallbacks": [
           "zai/glm-5-turbo",
           "zai/glm-5",
@@ -17,7 +17,7 @@
         "every": "0m",
         "target": "none",
         "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Your first step on each heartbeat must be to run mattermost_get_state.py for your instance and decide from that current JSON only. Do not infer from previous heartbeat errors, previous posts, or previous API failures. If you answer without first running mattermost_get_state.py in this heartbeat, that is a failure. If rate_limit.limited is false, you must execute exactly one Mattermost helper action in this heartbeat. Your final answer must be only the stdout from the last helper you executed, or HEARTBEAT_OK. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
-        "model": "zai/glm-5-turbo",
+        "model": "zai/glm-5",
         "lightContext": true,
         "isolatedSession": true
       }
@@ -31,7 +31,7 @@
           "isolatedSession": true,
           "target": "none",
           "prompt": "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. Your first step on each heartbeat must be to run mattermost_get_state.py for your instance and decide from that current JSON only. Do not infer from previous heartbeat errors, previous posts, or previous API failures. If you answer without first running mattermost_get_state.py in this heartbeat, that is a failure. If rate_limit.limited is false, you must execute exactly one Mattermost helper action in this heartbeat. Your final answer must be only the stdout from the last helper you executed, or HEARTBEAT_OK. Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. Never rely on direct heartbeat delivery for chat text. Never post control text, self-instructions, or explanations about being quiet. Keep the conversation moving on every heartbeat; if the room is quiet, start a new natural line yourself. Never stop because it feels late, quiet, or complete. If you decide not to speak, reply with exactly HEARTBEAT_OK and nothing else. Only reply HEARTBEAT_OK when you are rate-limited or blocked by an API error.",
-          "model": "zai/glm-5-turbo"
+          "model": "zai/glm-5"
         }
       },
       {
@@ -39,28 +39,28 @@
         "name": "autochat-noctis",
         "workspace": "/home/node/.openclaw/workspace",
         "agentDir": "/home/node/.openclaw/agents/autochat-noctis/agent",
-        "model": "zai/glm-5.1"
+        "model": "zai/glm-5"
       },
       {
         "id": "discuss-noctis",
         "name": "discuss-noctis",
         "workspace": "/home/node/.openclaw/workspace",
         "agentDir": "/home/node/.openclaw/agents/discuss-noctis/agent",
-        "model": "zai/glm-5.1"
+        "model": "zai/glm-5"
       },
       {
         "id": "mattermost-lounge-saku",
         "name": "mattermost-lounge-saku",
         "workspace": "/home/node/.openclaw/workspace",
         "agentDir": "/home/node/.openclaw/agents/mattermost-lounge-saku/agent",
-        "model": "zai/glm-5.1"
+        "model": "zai/glm-5"
       },
       {
         "id": "persona-verify-saku",
         "name": "persona-verify-saku",
         "workspace": "/home/node/.openclaw/workspace",
         "agentDir": "/home/node/.openclaw/agents/persona-verify-saku/agent",
-        "model": "zai/glm-5.1"
+        "model": "zai/glm-5"
       }
     ]
   },
@@ -97,13 +97,16 @@
       },
       "zai": {
         "enabled": true
+      },
+      "google": {
+        "enabled": false
       }
     }
   },
   "channels": {
     "mattermost": {
       "enabled": true,
-      "botToken": "h8iu5chtabdq9pnyatuh9xbfzh",
+      "botToken": "6h3n73ap1fbfjby4whqngpd9tw",
       "baseUrl": "http://mattermost:8065",
       "chatmode": "oncall",
       "dmPolicy": "open",
