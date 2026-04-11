@@ -16,23 +16,24 @@ from pathlib import Path
 from openclaw_podman_starter import cli
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
+MATTERMOST_TOOLS_DIR = SCRIPTS_DIR / "mattermost_tools"
+sys.path.insert(0, str(MATTERMOST_TOOLS_DIR))
 
-MATTERMOST_GET_STATE_PATH = SCRIPTS_DIR / "mattermost_get_state.py"
+MATTERMOST_GET_STATE_PATH = MATTERMOST_TOOLS_DIR / "get_state.py"
 mattermost_get_state_spec = importlib.util.spec_from_file_location("mattermost_get_state", MATTERMOST_GET_STATE_PATH)
 mattermost_get_state = importlib.util.module_from_spec(mattermost_get_state_spec)
 assert mattermost_get_state_spec and mattermost_get_state_spec.loader
 sys.modules[mattermost_get_state_spec.name] = mattermost_get_state
 mattermost_get_state_spec.loader.exec_module(mattermost_get_state)
 
-MATTERMOST_AUTOCHAT_TURN_PATH = SCRIPTS_DIR / "mattermost_autochat_turn.py"
-mattermost_autochat_turn_spec = importlib.util.spec_from_file_location(
-    "mattermost_autochat_turn", MATTERMOST_AUTOCHAT_TURN_PATH
+MATTERMOST_COMMON_RUNTIME_PATH = MATTERMOST_TOOLS_DIR / "common_runtime.py"
+mattermost_common_runtime_spec = importlib.util.spec_from_file_location(
+    "common_runtime", MATTERMOST_COMMON_RUNTIME_PATH
 )
-mattermost_autochat_turn = importlib.util.module_from_spec(mattermost_autochat_turn_spec)
-assert mattermost_autochat_turn_spec and mattermost_autochat_turn_spec.loader
-sys.modules[mattermost_autochat_turn_spec.name] = mattermost_autochat_turn
-mattermost_autochat_turn_spec.loader.exec_module(mattermost_autochat_turn)
+mattermost_common_runtime = importlib.util.module_from_spec(mattermost_common_runtime_spec)
+assert mattermost_common_runtime_spec and mattermost_common_runtime_spec.loader
+sys.modules[mattermost_common_runtime_spec.name] = mattermost_common_runtime
+mattermost_common_runtime_spec.loader.exec_module(mattermost_common_runtime)
 
 
 def write_env_file(path: Path) -> None:
@@ -79,37 +80,6 @@ class CliTests(unittest.TestCase):
                 raw_env={},
             ),
         )
-    def test_mattermost_lounge_prompt_mentions_action_scripts(self) -> None:
-        instance = cli.ScaledInstance(
-            instance_id=1,
-            pod_name="openclaw-1-pod",
-            container_name="openclaw-1",
-            config=cli.Config(
-                env_file=Path("D:/tmp/.env"),
-                container_name="openclaw-1",
-                image="image",
-                gateway_port=18789,
-                bridge_port=18790,
-                board_port=18889,
-                publish_host="127.0.0.1",
-                network="podman",
-                gateway_bind="lan",
-                userns="keep-id",
-                config_dir=Path("D:/tmp/instances/agent_001"),
-                workspace_dir=Path("D:/tmp/instances/agent_001/workspace"),
-                gateway_token="token",
-                ollama_base_url="http://127.0.0.1:11434",
-                ollama_model="gemma4:e2b",
-                board_image="python:3.11-slim",
-                raw_env={},
-            ),
-        )
-        prompt = cli.build_mattermost_lounge_turn_prompt(instance)
-        self.assertIn("mattermost_workspace_turn.py", prompt)
-        self.assertIn(cli.CONTAINER_MATTERMOST_TOOLS_DIR, prompt)
-        self.assertIn("workspace の `SOUL.md` / `IDENTITY.md` を source of truth", prompt)
-        self.assertIn("stdout だけをそのまま返答してください", prompt)
-
     def test_run_pod_local_agent_retries_on_rate_limit(self) -> None:
         rate_limited_payload = json.dumps(
             {
@@ -168,12 +138,11 @@ class CliTests(unittest.TestCase):
                 self.assertTrue(identity_path.exists())
                 self.assertTrue(tools_path.exists())
                 self.assertFalse((resolved.config.workspace_dir / "BBS.md").exists())
-                self.assertTrue((mattermost_tools / "mattermost_workspace_turn.py").exists())
-                self.assertTrue((mattermost_tools / "mattermost_get_state.py").exists())
-                self.assertTrue((mattermost_tools / "mattermost_post_message.py").exists())
-                self.assertTrue((mattermost_tools / "mattermost_create_channel.py").exists())
-                self.assertTrue((mattermost_tools / "mattermost_add_reaction.py").exists())
-                self.assertTrue((mattermost_tools / "mattermost_autochat_turn.py").exists())
+                self.assertTrue((mattermost_tools / "common_runtime.py").exists())
+                self.assertTrue((mattermost_tools / "get_state.py").exists())
+                self.assertTrue((mattermost_tools / "post_message.py").exists())
+                self.assertTrue((mattermost_tools / "create_channel.py").exists())
+                self.assertTrue((mattermost_tools / "add_reaction.py").exists())
 
                 soul_text = soul_path.read_text(encoding="utf-8")
                 identity_text = identity_path.read_text(encoding="utf-8")
@@ -458,7 +427,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(models["discuss-aster"], "zai/glm-5.1")
 
     def test_mattermost_autochat_runtime_supports_openrouter(self) -> None:
-        runtime = mattermost_autochat_turn.planner_runtime_from_env(
+        runtime = mattermost_common_runtime.planner_runtime_from_env(
             {
                 "OPENCLAW_MODEL_REF": "openrouter/google/gemma-3n-e2b-it:free",
                 "OPENCLAW_OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
@@ -472,7 +441,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(runtime["model_api_key"], "test-openrouter-key")
 
     def test_mattermost_autochat_runtime_supports_zai(self) -> None:
-        runtime = mattermost_autochat_turn.planner_runtime_from_env(
+        runtime = mattermost_common_runtime.planner_runtime_from_env(
             {
                 "OPENCLAW_MODEL_REF": "zai/glm-5.1",
                 "OPENCLAW_ZAI_BASE_URL": "https://api.z.ai/api/coding/paas/v4",
@@ -484,36 +453,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(runtime["model_id"], "glm-5.1")
         self.assertEqual(runtime["model_base_url"], "https://api.z.ai/api/coding/paas/v4")
         self.assertEqual(runtime["model_api_key"], "test-zai-key")
-
-    def test_openai_compatible_generate_retries_rate_limit(self) -> None:
-        payload = {
-            "choices": [
-                {
-                    "message": {
-                        "content": "PLANNER_OK",
-                    }
-                }
-            ]
-        }
-        with mock.patch.object(
-            mattermost_autochat_turn,
-            "http_json",
-            side_effect=[
-                mattermost_autochat_turn.RateLimitRetryError("HTTP 429", retry_after_seconds=0),
-                (200, {}, payload),
-            ],
-        ) as http_mock, mock.patch.object(mattermost_autochat_turn.time, "sleep") as sleep_mock:
-            result = mattermost_autochat_turn.openai_compatible_generate(
-                "https://example.invalid/v1",
-                "zai/glm-5.1",
-                "prompt",
-                60,
-                "api-key",
-            )
-
-        self.assertEqual(result, "PLANNER_OK")
-        self.assertEqual(http_mock.call_count, 2)
-        sleep_mock.assert_called_once_with(mattermost_autochat_turn.rate_limit_retry_delay_seconds(1, 0))
 
     def test_load_mattermost_config_uses_default_network(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

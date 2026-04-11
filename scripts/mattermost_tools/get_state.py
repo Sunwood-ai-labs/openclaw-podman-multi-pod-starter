@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from mattermost_autochat_turn import (
+from common_runtime import (
     BOT_IDS,
     HANDLES,
     fetch_channel_posts,

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 
-from mattermost_autochat_turn import (
+from common_runtime import (
     CHANNEL_PREFIX,
     HANDLES,
     MAX_TRIAD_CHANNELS,

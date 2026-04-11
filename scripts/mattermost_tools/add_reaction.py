@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 
-from mattermost_autochat_turn import (
+from common_runtime import (
     HANDLES,
     ensure_joined_channel,
     fetch_me,

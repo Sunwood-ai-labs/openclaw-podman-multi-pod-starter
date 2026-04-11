@@ -22,12 +22,12 @@ from urllib import request as urllib_request
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
-MATTERMOST_AUTOCHAT_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_autochat_turn.py"
-MATTERMOST_GET_STATE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_get_state.py"
-MATTERMOST_POST_MESSAGE_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_post_message.py"
-MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_create_channel.py"
-MATTERMOST_ADD_REACTION_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_add_reaction.py"
-MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE = REPO_ROOT / "scripts" / "mattermost_workspace_turn.py"
+MATTERMOST_TOOLS_SOURCE_DIR = REPO_ROOT / "scripts" / "mattermost_tools"
+MATTERMOST_COMMON_RUNTIME_FILE = MATTERMOST_TOOLS_SOURCE_DIR / "common_runtime.py"
+MATTERMOST_GET_STATE_SCRIPT_FILE = MATTERMOST_TOOLS_SOURCE_DIR / "get_state.py"
+MATTERMOST_POST_MESSAGE_SCRIPT_FILE = MATTERMOST_TOOLS_SOURCE_DIR / "post_message.py"
+MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE = MATTERMOST_TOOLS_SOURCE_DIR / "create_channel.py"
+MATTERMOST_ADD_REACTION_SCRIPT_FILE = MATTERMOST_TOOLS_SOURCE_DIR / "add_reaction.py"
 CONTAINER_CONFIG_DIR = "/home/node/.openclaw"
 CONTAINER_WORKSPACE_DIR = "/home/node/.openclaw/workspace"
 CONTAINER_MATTERMOST_TOOLS_DIR = f"{CONTAINER_CONFIG_DIR}/mattermost-tools"
@@ -97,9 +97,9 @@ DEFAULT_HEARTBEAT_PROMPT = (
     "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. "
     "Think for yourself, choose the best next Mattermost action, and execute it with the available tools when useful. "
     "Use the Mattermost helper scripts for state checks, reactions, thread replies, and channel management. "
-    "Your first step on each heartbeat must be to run mattermost_get_state.py for your instance and decide from that current JSON only. "
+    "Your first step on each heartbeat must be to run get_state.py for your instance and decide from that current JSON only. "
     "Do not infer from previous heartbeat errors, previous posts, or previous API failures. "
-    "If you answer without first running mattermost_get_state.py in this heartbeat, that is a failure. "
+    "If you answer without first running get_state.py in this heartbeat, that is a failure. "
     "If rate_limit.limited is false, you must execute exactly one Mattermost helper action in this heartbeat. "
     "Your final answer must be only the stdout from the last helper you executed, or HEARTBEAT_OK. "
     "Interpret time-of-day using Asia/Tokyo (JST), even if the heartbeat prompt also shows UTC. "
@@ -637,17 +637,17 @@ def render_workspace_files(instance: ScaledInstance) -> dict[str, str]:
 
         実行手順:
         1. 必要なら `SOUL.md` を見直して人格を合わせる。
-        2. まず `exec` で `python3 {CONTAINER_MATTERMOST_TOOLS_DIR}/mattermost_get_state.py --instance {profile.instance_id}` を実行し、今の Mattermost 状態を確認する。
+        2. まず `exec` で `python3 {CONTAINER_MATTERMOST_TOOLS_DIR}/get_state.py --instance {profile.instance_id}` を実行し、今の Mattermost 状態を確認する。
         3. `rate_limit.limited` が `true` なら `HEARTBEAT_OK` で止まる。
         4. `rate_limit.limited` が `false` なら、必ず Mattermost helper を使って 1 件 action を実行する。
-        5. 新しい雑談を始める時は `mattermost_post_message.py --channel-name triad-lab --message "<自然な一文>"` を使う。
-        6. thread 返信・reaction・channel 作成が必要な時は `mattermost_post_message.py`、`mattermost_create_channel.py`、`mattermost_add_reaction.py` を使ってよい。
+        5. 新しい雑談を始める時は `post_message.py --channel-name triad-lab --message "<自然な一文>"` を使う。
+        6. thread 返信・reaction・channel 作成が必要な時は `post_message.py`、`create_channel.py`、`add_reaction.py` を使ってよい。
         7. 最後の返答は、最後に実行した helper の stdout だけにする。
 
         ルール:
         - 1 回の heartbeat で多投しない。必要なら 1 投稿まで。
         - 人に指示を待たず、自分で会話を前へ動かす。
-        - 毎 heartbeat の判断材料は、今この回で取得した `mattermost_get_state.py` の JSON だけにする。前回の 401 や前回の投稿内容を根拠にしない。
+        - 毎 heartbeat の判断材料は、今この回で取得した `get_state.py` の JSON だけにする。前回の 401 や前回の投稿内容を根拠にしない。
         - 時刻判断は必ず日本時間 (`Asia/Tokyo`, JST) を基準にする。heartbeat prompt に UTC が書かれていても、それだけで「深夜」と決めない。
         - `今日は静かだから何もしない` は禁止。静かなら新しい一言を置く。
         - `深夜だから控える`, `静まり返っているから休む`, `これ以上は何もしない` のような判断は禁止。
@@ -800,36 +800,39 @@ def mattermost_tools_root(instance: ScaledInstance) -> Path:
 
 def render_mattermost_tool_files(instance: ScaledInstance) -> dict[Path, str]:
     tools_root = mattermost_tools_root(instance)
-    mattermost_autochat_script = MATTERMOST_AUTOCHAT_SCRIPT_FILE.read_text(encoding="utf-8")
+    mattermost_common_runtime_script = MATTERMOST_COMMON_RUNTIME_FILE.read_text(encoding="utf-8")
     mattermost_get_state_script = MATTERMOST_GET_STATE_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_post_message_script = MATTERMOST_POST_MESSAGE_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_create_channel_script = MATTERMOST_CREATE_CHANNEL_SCRIPT_FILE.read_text(encoding="utf-8")
     mattermost_add_reaction_script = MATTERMOST_ADD_REACTION_SCRIPT_FILE.read_text(encoding="utf-8")
-    mattermost_workspace_turn_script = MATTERMOST_WORKSPACE_TURN_SCRIPT_FILE.read_text(encoding="utf-8")
     readme = dedent(
         f"""\
         {MATTERMOST_TOOLS_MANAGED_MARKER}
-        # Mattermost Lounge Scripts
+        # Mattermost Helper Scripts
 
         These files are copied into `{CONTAINER_MATTERMOST_TOOLS_DIR}` inside each scaled OpenClaw pod.
-        The lounge runner reads workspace persona files and the helpers only execute Mattermost API actions.
+        Heartbeat uses these helpers directly. `common_runtime.py` holds shared Mattermost runtime code and the entrypoints only execute API actions.
         """
     )
     return {
         tools_root / "README.md": readme.strip() + "\n",
-        tools_root / "mattermost_autochat_turn.py": mattermost_autochat_script if mattermost_autochat_script.endswith("\n") else mattermost_autochat_script + "\n",
-        tools_root / "mattermost_get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
-        tools_root / "mattermost_post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
-        tools_root / "mattermost_create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
-        tools_root / "mattermost_add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
-        tools_root / "mattermost_workspace_turn.py": mattermost_workspace_turn_script if mattermost_workspace_turn_script.endswith("\n") else mattermost_workspace_turn_script + "\n",
+        tools_root / "common_runtime.py": mattermost_common_runtime_script if mattermost_common_runtime_script.endswith("\n") else mattermost_common_runtime_script + "\n",
+        tools_root / "get_state.py": mattermost_get_state_script if mattermost_get_state_script.endswith("\n") else mattermost_get_state_script + "\n",
+        tools_root / "post_message.py": mattermost_post_message_script if mattermost_post_message_script.endswith("\n") else mattermost_post_message_script + "\n",
+        tools_root / "create_channel.py": mattermost_create_channel_script if mattermost_create_channel_script.endswith("\n") else mattermost_create_channel_script + "\n",
+        tools_root / "add_reaction.py": mattermost_add_reaction_script if mattermost_add_reaction_script.endswith("\n") else mattermost_add_reaction_script + "\n",
     }
 
 
 def scaffold_mattermost_tools(instance: ScaledInstance) -> None:
     tools_root = mattermost_tools_root(instance)
     tools_root.mkdir(parents=True, exist_ok=True)
-    for path, content in render_mattermost_tool_files(instance).items():
+    rendered_files = render_mattermost_tool_files(instance)
+    managed_python_names = {path.name for path in rendered_files if path.suffix == ".py"}
+    for existing in tools_root.glob("*.py"):
+        if existing.name not in managed_python_names:
+            existing.unlink()
+    for path, content in rendered_files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
@@ -1287,20 +1290,6 @@ def build_autochat_turn_prompt(instance: ScaledInstance) -> str:
     ).strip()
 
 
-def build_mattermost_lounge_turn_prompt(instance: ScaledInstance) -> str:
-    script_path = f"{CONTAINER_MATTERMOST_TOOLS_DIR}/mattermost_workspace_turn.py"
-    return dedent(
-        f"""\
-        exec ツールで次のコマンドだけを正確に実行してください。他のコマンドは実行しないでください。
-        `mattermost_workspace_turn.py` は workspace の `SOUL.md` / `IDENTITY.md` を source of truth として読み、
-        Mattermost helper を使って 1 ターンぶんの action を実行します。
-        python3 {script_path} --instance {instance.instance_id}
-
-        実行が終わったら、そのコマンドの stdout だけをそのまま返答してください。
-        """
-    ).strip()
-
-
 def discussion_result_text(payload: dict[str, object]) -> str:
     payloads = payload.get("payloads")
     if not isinstance(payloads, list):
@@ -1497,40 +1486,6 @@ def add_autochat_job(instance: ScaledInstance, interval_minutes: int, timeout_se
     )
 
 
-def add_mattermost_lounge_job(instance: ScaledInstance, interval_minutes: int, timeout_seconds: int) -> dict[str, object]:
-    job = mattermost_lounge_job(instance)
-    if job is not None:
-        openclaw_cron_json(instance, ["rm", str(job.get("id"))])
-
-    prompt = build_mattermost_lounge_turn_prompt(instance)
-    # Offset Mattermost lounge from shared-board autochat so one instance does
-    # not trigger two automation turns at the same minute.
-    cron_expr = autochat_cron_expression(instance.instance_id, interval_minutes, phase_offset=1)
-    return openclaw_cron_json(
-        instance,
-        [
-            "add",
-            "--name",
-            mattermost_lounge_job_name(instance.instance_id),
-            "--agent",
-            mattermost_lounge_agent_id(instance.instance_id),
-            "--session",
-            "isolated",
-            "--cron",
-            cron_expr,
-            "--exact",
-            "--no-deliver",
-            "--timeout-seconds",
-            str(timeout_seconds),
-            "--thinking",
-            "off",
-            "--message",
-            prompt,
-        ],
-        timeout_seconds=timeout_seconds,
-    )
-
-
 def ensure_autochat_agent(instance: ScaledInstance) -> None:
     agent_id = autochat_agent_id(instance.instance_id)
     ensure_named_agent(instance, agent_id)
@@ -1605,17 +1560,6 @@ def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> 
     job = autochat_job(instance)
     if job is None:
         raise SystemExit(f"No autochat job found for instance {instance.instance_id}.")
-    return openclaw_cron_json_no_flag(
-        instance,
-        ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
-        timeout_seconds=max(120, timeout_ms // 1000 + 30),
-    )
-
-
-def run_mattermost_lounge_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> dict[str, object]:
-    job = mattermost_lounge_job(instance)
-    if job is None:
-        raise SystemExit(f"No Mattermost lounge job found for instance {instance.instance_id}.")
     return openclaw_cron_json_no_flag(
         instance,
         ["run", str(job.get("id")), "--timeout", str(timeout_ms)],
