@@ -147,9 +147,12 @@ DEFAULTS = {
     "OPENCLAW_MATTERMOST_REQUIRE_MENTION": "true",
     "OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK": "true",
     "OPENCLAW_MATTERMOST_TEAM_NAME": DEFAULT_MATTERMOST_TEAM_NAME,
-    "OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME": "OpenClaw Lab",
+    "OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME": "おーぷんくらう研究室",
+    "OPENCLAW_MATTERMOST_TEAM_DESCRIPTION": "GLM三席とGemini三席が対話・検証・連携を行うMattermost実験チーム",
     "OPENCLAW_MATTERMOST_CHANNEL_NAME": DEFAULT_MATTERMOST_CHANNEL_NAME,
-    "OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME": "Triad Lab",
+    "OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME": "ろくせき談話室",
+    "OPENCLAW_MATTERMOST_CHANNEL_PURPOSE": "GLM三席とGemini三席が雑談・検証・相談を流し込む共有チャンネル",
+    "OPENCLAW_MATTERMOST_CHANNEL_HEADER": "いおり｜星図航路士｜glm-5.1 / つむぎ｜夢写本師｜glm-5-turbo / さく｜痕跡鑑識官｜glm-5 / るり｜信号地図師｜gemma-4-31b-it / ひびき｜拍子調律師｜gemma-3-27b-it / かなえ｜検証編み手｜gemma-4-26b-a4b-it",
     "OPENCLAW_MATTERMOST_AUTONOMY_ENABLED": "false",
     "OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL": "6m",
     "OPENCLAW_MATTERMOST_AUTONOMY_LIGHT_CONTEXT": "true",
@@ -3287,6 +3290,48 @@ def mattermost_channel_id(cfg: MattermostConfig, token: str) -> str:
     return channel_id
 
 
+def mattermost_update_team_metadata(
+    cfg: MattermostConfig,
+    team_id: str,
+    token: str,
+    *,
+    display_name: str,
+    description: str,
+) -> None:
+    mattermost_api_request(
+        cfg,
+        f"/api/v4/teams/{team_id}/patch",
+        method="PUT",
+        token=token,
+        payload={
+            "display_name": display_name,
+            "description": description,
+        },
+    )
+
+
+def mattermost_update_channel_metadata(
+    cfg: MattermostConfig,
+    channel_id: str,
+    token: str,
+    *,
+    display_name: str,
+    purpose: str,
+    header: str,
+) -> None:
+    mattermost_api_request(
+        cfg,
+        f"/api/v4/channels/{channel_id}/patch",
+        method="PUT",
+        token=token,
+        payload={
+            "display_name": display_name,
+            "purpose": purpose,
+            "header": header,
+        },
+    )
+
+
 def recent_mattermost_channel_posts(cfg: MattermostConfig, token: str, channel_id: str, limit: int = 8) -> list[dict[str, object]]:
     _, _, payload = mattermost_api_request(
         cfg,
@@ -3322,6 +3367,11 @@ def cmd_mattermost_init(args: argparse.Namespace) -> int:
         ("OPENCLAW_MATTERMOST_REQUIRE_MENTION", "true"),
         ("OPENCLAW_MATTERMOST_DANGEROUSLY_ALLOW_PRIVATE_NETWORK", "true"),
         ("OPENCLAW_MATTERMOST_TEAMMATE_NAME_DISPLAY", "full_name"),
+        ("OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME", DEFAULTS["OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME"]),
+        ("OPENCLAW_MATTERMOST_TEAM_DESCRIPTION", DEFAULTS["OPENCLAW_MATTERMOST_TEAM_DESCRIPTION"]),
+        ("OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME", DEFAULTS["OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME"]),
+        ("OPENCLAW_MATTERMOST_CHANNEL_PURPOSE", DEFAULTS["OPENCLAW_MATTERMOST_CHANNEL_PURPOSE"]),
+        ("OPENCLAW_MATTERMOST_CHANNEL_HEADER", DEFAULTS["OPENCLAW_MATTERMOST_CHANNEL_HEADER"]),
     ):
         write_env_value_if_missing(args.env_file, key, value)
 
@@ -3398,8 +3448,11 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
     operator_password = state_values[MATTERMOST_OPERATOR_PASSWORD_KEY]
     team_name = cfg.raw_env["OPENCLAW_MATTERMOST_TEAM_NAME"]
     team_display_name = cfg.raw_env["OPENCLAW_MATTERMOST_TEAM_DISPLAY_NAME"]
+    team_description = cfg.raw_env.get("OPENCLAW_MATTERMOST_TEAM_DESCRIPTION", "").strip()
     channel_name = cfg.raw_env["OPENCLAW_MATTERMOST_CHANNEL_NAME"]
     channel_display_name = cfg.raw_env["OPENCLAW_MATTERMOST_CHANNEL_DISPLAY_NAME"]
+    channel_purpose = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_PURPOSE", "").strip()
+    channel_header = cfg.raw_env.get("OPENCLAW_MATTERMOST_CHANNEL_HEADER", "").strip()
 
     mattermost_mmctl(
         cfg,
@@ -3484,6 +3537,26 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
     )
     ensure_mattermost_admin_session(cfg, admin_username, admin_password)
     admin_api_token = mattermost_login(cfg, admin_username, admin_password)
+    _, _, team_payload = mattermost_api_request(cfg, f"/api/v4/teams/name/{team_name}", token=admin_api_token)
+    team_id = str((team_payload or {}).get("id", "")).strip()
+    if not team_id:
+        raise SystemExit(f"Could not resolve Mattermost team id for {team_name}.")
+    mattermost_update_team_metadata(
+        cfg,
+        team_id,
+        admin_api_token,
+        display_name=team_display_name,
+        description=team_description,
+    )
+    channel_id = mattermost_channel_id(cfg, admin_api_token)
+    mattermost_update_channel_metadata(
+        cfg,
+        channel_id,
+        admin_api_token,
+        display_name=channel_display_name,
+        purpose=channel_purpose,
+        header=channel_header,
+    )
 
     for instance_id in range(1, args.count + 1):
         token_key = mattermost_token_key_for_instance(instance_id)
