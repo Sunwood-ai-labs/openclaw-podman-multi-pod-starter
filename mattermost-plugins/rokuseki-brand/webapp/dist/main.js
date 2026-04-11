@@ -110,9 +110,9 @@
   function heroMarkup() {
     return `
       <div class="rokuseki-hero-crest">${createCrestSvg()}</div>
-      <div class="rokuseki-hero-badge">CHANNEL CREST ・ ろくせき談話室</div>
+      <div class="rokuseki-hero-badge">CHANNEL CREST ・ \u308d\u304f\u305b\u304d\u8ac7\u8a71\u5ba4</div>
       <div class="rokuseki-hero-copy">
-        Mattermost 標準のチャンネル導入イラストの代わりに、六席チーム専用のクレストを表示します。
+        Mattermost \u6a19\u6e96\u306e\u30c1\u30e3\u30f3\u30cd\u30eb\u5c0e\u5165\u30a4\u30e9\u30b9\u30c8\u306e\u4ee3\u308f\u308a\u306b\u3001\u516d\u5e2d\u30c1\u30fc\u30e0\u5c02\u7528\u306e\u30af\u30ec\u30b9\u30c8\u3092\u8868\u793a\u3057\u307e\u3059\u3002
       </div>
     `;
   }
@@ -148,7 +148,7 @@
 
     const crest = document.createElement("span");
     crest.id = HEADER_CREST_ID;
-    crest.setAttribute("aria-label", "ろくせき談話室 crest");
+    crest.setAttribute("aria-label", "\u308d\u304f\u305b\u304d\u8ac7\u8a71\u5ba4 crest");
     crest.innerHTML = createCrestSvg();
     top.insertBefore(crest, top.firstChild);
   }
@@ -212,7 +212,7 @@
               fontSize: "16px",
             },
           },
-          "✦"
+          "\u2726"
         );
 
         registry.registerChannelHeaderButtonAction(
@@ -225,7 +225,7 @@
                 [
                   { transform: "scale(1)", boxShadow: "0 8px 18px rgba(18, 32, 62, 0.18)" },
                   { transform: "scale(1.08)", boxShadow: "0 12px 26px rgba(18, 32, 62, 0.28)" },
-                  { transform: "scale(1)", boxShadow: "0 8px 18px rgba(18, 32, 62, 0.18)" },
+                  { transform: "scale(1)", boxShadow: "0 8px 18px rgba(18, 32, 62, 0.18)" }
                 ],
                 { duration: 360, easing: "ease-out" }
               );
