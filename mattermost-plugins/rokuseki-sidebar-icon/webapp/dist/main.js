@@ -6,6 +6,11 @@
     'a.SidebarLink[href="/openclaw/channels/triad-lab"]',
     'a[aria-label="ろくせき談話室 公開チャンネル"]'
   ].join(", ");
+  const SIDEBAR_ICON_SELECTOR = [
+    '#sidebarItem_triad-lab > i.icon-globe',
+    'a.SidebarLink[href="/openclaw/channels/triad-lab"] > i.icon-globe',
+    'a[aria-label="ろくせき談話室 公開チャンネル"] > i.icon-globe'
+  ].join(", ");
 
   function crestDataUrl() {
     const svg = `
@@ -45,23 +50,20 @@
         align-items: center;
       }
 
-      ${SIDEBAR_ROW_SELECTOR} > i.icon-globe,
-      ${SIDEBAR_ROW_SELECTOR} > i.icon.icon-globe,
-      ${SIDEBAR_ROW_SELECTOR} > [class*="icon-globe"] {
-        display: none !important;
-      }
-
-      ${SIDEBAR_ROW_SELECTOR}::before {
-        content: "";
+      ${SIDEBAR_ICON_SELECTOR} {
         width: 18px;
         height: 18px;
-        flex: 0 0 18px;
         margin-right: 8px;
         border-radius: 6px;
         background-image: url("${crestDataUrl()}");
         background-size: cover;
         background-repeat: no-repeat;
         background-position: center;
+        color: transparent !important;
+        font-size: 0 !important;
+        line-height: 0 !important;
+        display: inline-block !important;
+        flex: 0 0 18px;
       }
     `;
 
