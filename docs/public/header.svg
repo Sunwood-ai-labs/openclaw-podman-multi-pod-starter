@@ -1,94 +1,119 @@
 <svg width="1400" height="520" viewBox="0 0 1400 520" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="120" y1="40" x2="1260" y2="480" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0B1220"/>
-      <stop offset="0.55" stop-color="#14233D"/>
-      <stop offset="1" stop-color="#0D6A7D"/>
+    <linearGradient id="bg" x1="92" y1="34" x2="1280" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06111B"/>
+      <stop offset="0.45" stop-color="#112740"/>
+      <stop offset="1" stop-color="#114A47"/>
     </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.12"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    <linearGradient id="panel" x1="92" y1="56" x2="1308" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"/>
     </linearGradient>
-    <filter id="shadow" x="-20" y="-20" width="1440" height="560" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#04111C" flood-opacity="0.35"/>
+    <linearGradient id="chip" x1="92" y1="92" x2="410" y2="132" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9DECF9" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#5EEAD4" stop-opacity="0.14"/>
+    </linearGradient>
+    <linearGradient id="cardStroke" x1="980" y1="118" x2="1320" y2="438" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9DECF9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#8AF4B1" stop-opacity="0.2"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1180 94) rotate(90) scale(140 180)">
+      <stop offset="0" stop-color="#86F5D1" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#86F5D1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(240 486) rotate(180) scale(320 160)">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="32" y="36" width="1336" height="448" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#021018" flood-opacity="0.36"/>
     </filter>
   </defs>
 
   <rect width="1400" height="520" rx="28" fill="url(#bg)"/>
+  <rect width="1400" height="520" rx="28" fill="url(#glowA)"/>
+  <rect width="1400" height="520" rx="28" fill="url(#glowB)"/>
 
-  <g opacity="0.18">
-    <path d="M0 110H1400" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M0 210H1400" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M0 310H1400" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M0 410H1400" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M170 0V520" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M420 0V520" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M670 0V520" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M920 0V520" stroke="#D4F8FF" stroke-width="1"/>
-    <path d="M1170 0V520" stroke="#D4F8FF" stroke-width="1"/>
+  <g opacity="0.16">
+    <path d="M0 108H1400" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M0 208H1400" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M0 308H1400" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M0 408H1400" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M170 0V520" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M420 0V520" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M670 0V520" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M920 0V520" stroke="#D7FBFF" stroke-width="1"/>
+    <path d="M1170 0V520" stroke="#D7FBFF" stroke-width="1"/>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="56" y="56" width="1288" height="408" rx="28" fill="url(#panel)" stroke="#D8F4FF" stroke-opacity="0.18"/>
+    <rect x="56" y="56" width="1288" height="408" rx="28" fill="url(#panel)" stroke="#D8F4FF" stroke-opacity="0.16"/>
   </g>
 
   <g>
-    <rect x="92" y="92" width="228" height="38" rx="19" fill="#9FE8F7" fill-opacity="0.16" stroke="#9FE8F7" stroke-opacity="0.5"/>
-    <text x="206" y="117" fill="#DDFBFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.6">PODMAN KUBE PLAY</text>
+    <rect x="92" y="92" width="390" height="40" rx="20" fill="url(#chip)" stroke="#9DECF9" stroke-opacity="0.46"/>
+    <text x="116" y="118" fill="#E4FCFF" font-size="17" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.15">ONIZUKA SERIES / AGI WORKFLOWS</text>
   </g>
 
   <g>
-    <text x="92" y="186" fill="#F8FDFF" font-size="64" font-weight="700" font-family="Segoe UI, Arial, sans-serif">OpenClaw Podman Starter</text>
-    <text x="92" y="232" fill="#CDEDF4" font-size="24" font-family="Segoe UI, Arial, sans-serif">
-      Multi-instance pods, isolated state, and validated model runs.
+    <text x="92" y="194" fill="#F8FDFF" font-size="58" font-weight="700" font-family="Segoe UI, Arial, sans-serif">ONIZUKA OpenClaw</text>
+    <text x="92" y="256" fill="#F8FDFF" font-size="54" font-weight="700" font-family="Segoe UI, Arial, sans-serif">Autonomous Team Starter</text>
+    <text x="92" y="308" fill="#D2EEF5" font-size="24" font-family="Segoe UI, Arial, sans-serif">
+      Autonomous agents, isolated runtimes, and role-aware teamwork.
     </text>
-    <text x="92" y="266" fill="#CDEDF4" font-size="24" font-family="Segoe UI, Arial, sans-serif">
-      Verified with Gemma and GLM on real Podman pods.
+    <text x="92" y="342" fill="#D2EEF5" font-size="24" font-family="Segoe UI, Arial, sans-serif">
+      One ONIZUKA-series project for AGI-oriented development.
     </text>
   </g>
 
   <g>
-    <rect x="92" y="306" width="246" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.10"/>
-    <text x="215" y="333" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">one instance = one pod</text>
+    <rect x="92" y="378" width="236" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.1"/>
+    <text x="210" y="405" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">ONIZUKA series node</text>
 
-    <rect x="352" y="306" width="220" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.10"/>
-    <text x="462" y="333" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">Gemma + GLM verified</text>
+    <rect x="342" y="378" width="266" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.1"/>
+    <text x="475" y="405" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">Podman-isolated teammates</text>
 
-    <rect x="586" y="306" width="218" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.10"/>
-    <text x="695" y="333" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">Windows + WSL aware</text>
+    <rect x="622" y="378" width="236" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.1"/>
+    <text x="740" y="405" fill="#F5FCFF" font-size="18" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif">Mattermost + validation</text>
+  </g>
+
+  <g opacity="0.92">
+    <path d="M918 174H982" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 174L1006 154" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 174L1006 194" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+
+    <path d="M918 278H982" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 278L1006 258" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 278L1006 298" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+
+    <path d="M918 382H982" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 382L1006 362" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M982 382L1006 402" stroke="#9DECF9" stroke-width="4" stroke-linecap="round"/>
   </g>
 
   <g>
-    <path d="M928 178H1004" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 178L1030 156" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 178L1030 200" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-
-    <path d="M928 262H1004" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 262L1030 240" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 262L1030 284" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-
-    <path d="M928 346H1004" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 346L1030 324" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
-    <path d="M1004 346L1030 368" stroke="#8CEAFF" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="1150" cy="84" r="42" fill="#09131D" fill-opacity="0.28" stroke="#9DECF9" stroke-opacity="0.34"/>
+    <circle cx="1150" cy="84" r="34" fill="#0B1D28" fill-opacity="0.52" stroke="#9DECF9" stroke-opacity="0.24"/>
+    <text x="1150" y="90" fill="#E6FCFF" font-size="16" font-weight="700" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.2">ONI</text>
   </g>
 
   <g>
-    <rect x="1038" y="130" width="252" height="96" rx="22" fill="#08131E" fill-opacity="0.48" stroke="#7DE4F8" stroke-opacity="0.45"/>
-    <rect x="1064" y="156" width="40" height="40" rx="10" fill="#0F7C8C"/>
-    <text x="1134" y="166" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Instance 1</text>
-    <text x="1134" y="192" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">openclaw-1-pod</text>
-    <text x="1134" y="212" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">127.0.0.1:18789</text>
+    <rect x="1008" y="126" width="304" height="92" rx="22" fill="#08131E" fill-opacity="0.5" stroke="url(#cardStroke)"/>
+    <rect x="1034" y="152" width="42" height="42" rx="12" fill="#0D7C89"/>
+    <text x="1102" y="164" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Series Fit</text>
+    <text x="1102" y="190" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">Autonomous agents</text>
+    <text x="1102" y="210" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">AGI development track</text>
 
-    <rect x="1038" y="236" width="252" height="96" rx="22" fill="#08131E" fill-opacity="0.48" stroke="#7DE4F8" stroke-opacity="0.45"/>
-    <rect x="1064" y="262" width="40" height="40" rx="10" fill="#0C8AA0"/>
-    <text x="1134" y="272" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Instance 2</text>
-    <text x="1134" y="298" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">openclaw-2-pod</text>
-    <text x="1134" y="318" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">127.0.0.1:18791</text>
+    <rect x="1008" y="230" width="304" height="92" rx="22" fill="#08131E" fill-opacity="0.5" stroke="url(#cardStroke)"/>
+    <rect x="1034" y="256" width="42" height="42" rx="12" fill="#0B8EA0"/>
+    <text x="1102" y="268" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Team Loop</text>
+    <text x="1102" y="294" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">persona -> heartbeat</text>
+    <text x="1102" y="314" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">coordination surface</text>
 
-    <rect x="1038" y="342" width="252" height="96" rx="22" fill="#08131E" fill-opacity="0.48" stroke="#7DE4F8" stroke-opacity="0.45"/>
-    <rect x="1064" y="368" width="40" height="40" rx="10" fill="#09A8B4"/>
-    <text x="1134" y="378" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Instance 3</text>
-    <text x="1134" y="404" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">openclaw-3-pod</text>
-    <text x="1134" y="424" fill="#BCE7EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">127.0.0.1:18793</text>
+    <rect x="1008" y="334" width="304" height="92" rx="22" fill="#08131E" fill-opacity="0.5" stroke="url(#cardStroke)"/>
+    <rect x="1034" y="360" width="42" height="42" rx="12" fill="#13A97C"/>
+    <text x="1102" y="372" fill="#E8FBFF" font-size="18" font-family="Segoe UI, Arial, sans-serif">Runtime</text>
+    <text x="1102" y="398" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">OpenClaw + Podman</text>
+    <text x="1102" y="418" fill="#BFE8EF" font-size="16" font-family="Segoe UI, Arial, sans-serif">Mattermost lab</text>
   </g>
 </svg>
