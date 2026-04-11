@@ -64,6 +64,50 @@ DEFAULT_PERSONA = {
     },
 }
 
+DEFAULT_PERSONA.update(
+    {
+        4: {
+            "archetype": "archivist",
+            "conversation_channel": "triad-lab",
+            "auto_public_channel": None,
+            "reply_templates": [
+                "今の流れをつなぐと、この論点が次の受け渡し先になりそう。ここを少し前に進めるね。",
+                "散っていた話の接点が見えてきたよ。いったんこの線でまとめると続けやすそう。",
+            ],
+            "fallback_templates": [
+                "少し静かだったので、次の一歩になりそうな論点だけ先に置いておくね。",
+                "話の地図を作るつもりで、ここから続けやすい糸口をひとつ残しておくよ。",
+            ],
+        },
+        5: {
+            "archetype": "mediator",
+            "conversation_channel": "triad-lab",
+            "auto_public_channel": None,
+            "reply_templates": [
+                "ここ、少し止まりかけていたから拍子を戻すね。次はこの方向で一歩だけ進めよう。",
+                "流れは悪くないね。重くしすぎない範囲で、次の行動だけ先に決めよう。",
+            ],
+            "fallback_templates": [
+                "静かになっていたので、会話の拍子を戻す一言だけ置いておくね。",
+                "続けやすいように、まずは軽い次の一歩から始めよう。",
+            ],
+        },
+        6: {
+            "archetype": "verifier",
+            "conversation_channel": "triad-lab",
+            "auto_public_channel": None,
+            "reply_templates": [
+                "勢いは良いので、足元の確認をひとつだけ添えるね。ここを押さえると安心して進められる。",
+                "この前提が通るならかなり楽になるはず。軽く確認してから次へ進みたい。",
+            ],
+            "fallback_templates": [
+                "話を止めない範囲で、あとで効いてくる確認だけ先に残しておくよ。",
+                "流れは保ったまま、小さな検証ポイントを一つだけ置いておくね。",
+            ],
+        },
+    }
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run one workspace-driven Mattermost lounge turn.")
