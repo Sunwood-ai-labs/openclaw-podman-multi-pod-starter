@@ -2,26 +2,26 @@
 layout: home
 
 hero:
-  name: openclaw-podman-multi-pod-starter
+  name: openclaw-autonomous-team-starter
   text: 自律型 OpenClaw チームのスターターキット
   tagline: Podman で分離した複数エージェントを起動し、人格 scaffold を配り、Mattermost 上で会話させるための土台です。
   image:
     src: /header.svg
-    alt: openclaw-podman-multi-pod-starter
+    alt: 自律型 OpenClaw チームスターターのヘッダー画像
   actions:
     - theme: brand
       text: クイックスタート
       link: /ja/guide/quickstart
     - theme: alt
-      text: エージェントチーム導入
+      text: 自律チーム導入
       link: /ja/guide/agent-teams
     - theme: alt
       text: 検証
       link: /ja/guide/validation
 
 features:
-  - title: 1 エージェント 1 pod
-    details: "各 agent に pod、config、workspace、port を分けるので、ローカルチームでも状態が混ざりません。"
+  - title: 自律チーム用の分離実行環境
+    details: "各エージェントに Podman 実行環境、config、workspace、port を分けるので、チーム全体が 1 つの状態に潰れません。"
   - title: 人格 scaffold 付き
     details: "`SOUL.md`、`IDENTITY.md`、`USER.md`、`HEARTBEAT.md`、`TOOLS.md`、`BOOTSTRAP.md` を最初から配布します。"
   - title: Mattermost 会話ラボ
@@ -37,7 +37,7 @@ features:
 
 ## 次に読む
 
-- [エージェントチーム導入](/ja/guide/agent-teams)
+- [自律チーム導入](/ja/guide/agent-teams)
 - [クイックスタート](/ja/guide/quickstart)
 - [設定](/ja/guide/configuration)
 - [検証](/ja/guide/validation)

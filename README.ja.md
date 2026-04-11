@@ -1,6 +1,6 @@
 <div align="center">
 
-# openclaw-podman-multi-pod-starter
+# openclaw-autonomous-team-starter
 
 ![Project header](./assets/header.svg)
 
@@ -8,18 +8,18 @@ Podman 上で小さな OpenClaw エージェントチームを立ち上げるた
 
 [English README](./README.md)
 
-![CI](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-podman-multi-pod-starter)
+![CI](https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-autonomous-team-starter)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Podman](https://img.shields.io/badge/podman-kube%20play-892CA0)
 
-[Docs Site](https://sunwood-ai-labs.github.io/openclaw-podman-multi-pod-starter/)
+[Docs Site](https://sunwood-ai-labs.github.io/openclaw-autonomous-team-starter/)
 
 </div>
 
 ## 概要
 
-このリポジトリは、Windows 前提で OpenClaw を Podman 上に複数起動し、会話できるローカルなエージェントチームとして扱うためのスターターです。
+このリポジトリは、Windows 前提で OpenClaw の自律チームを立ち上げるためのスターターです。Podman が各エージェントの実行環境を分離し、Mattermost がローカルな協調面を担います。
 
 含まれるもの:
 
@@ -42,7 +42,7 @@ OpenClaw の公式ドキュメントだけでも Podman や複数 gateway の基
 
 この repo は、その glue をまとめて「エージェントチームのスターターキット」として扱える形にしています。
 
-## エージェントスターターらしいポイント
+## 自律チームスターターらしいポイント
 
 ### 1. 1 エージェントごとに pod と workspace を分離
 
@@ -85,7 +85,7 @@ Mattermost 導線が最初から入っています。
 ## クイックスタート: 3 人チームを起動
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -97,6 +97,8 @@ notepad .env
 .\scripts\launch.ps1 --count 3
 .\scripts\mattermost.ps1 smoke --count 3
 ```
+
+公開プロジェクト名は `openclaw-autonomous-team-starter` ですが、現行の helper command 名は当面 `openclaw-podman` のままです。
 
 これで次が揃います。
 
@@ -120,7 +122,7 @@ notepad .env
 まず 1 体だけで試したい場合:
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -141,7 +143,7 @@ notepad .env
 podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
 ```
 
-## 3 台構成
+## 3 人チーム構成
 
 ```powershell
 .\scripts\init.ps1 --count 3
@@ -159,9 +161,9 @@ podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
 
 既定の triad 役割:
 
-- Instance 1 / `いおり`: deployment、manifest、state hygiene を見る systems lead
-- Instance 2 / `つむぎ`: docs、prompt、発想展開を担う builder muse
-- Instance 3 / `さく`: test、diff、リスク確認を担う verification sentinel
+- Instance 1 / `いおり`: deployment、manifest、state hygiene を見る運用リード
+- Instance 2 / `つむぎ`: docs、prompt、発想展開を担う構築役
+- Instance 3 / `さく`: test、diff、リスク確認を担う検証役
 
 3 人構成がこの repo の基本導線ですが、必要に応じて人数を増やせます。
 
@@ -244,6 +246,10 @@ http://172.27.208.1:11434
 - agent 側のファイル生成と実行
 - `write` / `read` / `exec` の transcript 証跡
 
+履歴メモ:
+
+- report には、各検証を実行した当時のローカル path、room 名、runtime identifier がそのまま残る場合があります
+
 ## 主なコマンド
 
 ```powershell
@@ -314,6 +320,8 @@ uv run openclaw-podman mattermost lounge run-now --count 3
 - secret は `pod.yaml` に直書きせず mounted env file 側へ逃がす
 - Mattermost bot token は `openclaw.json` から `${OPENCLAW_MATTERMOST_BOT_TOKEN}` 参照にする
 - `openclaw.json` の揮発的な `meta` timestamp を落とす
+
+生成物によっては、runtime 証跡としてローカル checkout path や `openclaw-podman` のような安定した内部 identifier を保持する場合があります。
 
 ## 信頼境界
 

@@ -1,6 +1,6 @@
 # クイックスタート
 
-このページは最短でローカルチームを動かすための導線です。役割 scaffold や協働モデルを詳しく見たい時は、初回起動のあとに [エージェントチーム導入](/ja/guide/agent-teams) を読むと把握しやすいです。
+このページは最短でローカルチームを動かすための導線です。役割 scaffold や協働モデルを詳しく見たい時は、初回起動のあとに [自律チーム導入](/ja/guide/agent-teams) を読むと把握しやすいです。
 
 ## 前提
 
@@ -12,7 +12,7 @@
 ## 3 人チームを起動
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -24,6 +24,9 @@ notepad .env
 .\scripts\launch.ps1 --count 3
 .\scripts\mattermost.ps1 smoke --count 3
 ```
+
+公開プロジェクト名: `openclaw-autonomous-team-starter`
+現行 helper command 名: `openclaw-podman`
 
 ## 生成されるもの
 
@@ -45,9 +48,9 @@ workspace ごと:
 
 ## 既定の triad
 
-- Instance 1 / `いおり`: systems lead
-- Instance 2 / `つむぎ`: builder muse
-- Instance 3 / `さく`: verification sentinel
+- Instance 1 / `いおり`: 運用リード
+- Instance 2 / `つむぎ`: 構築役
+- Instance 3 / `さく`: 検証役
 
 ## Mattermost でよく使うコマンド
 

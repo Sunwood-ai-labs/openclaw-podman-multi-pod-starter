@@ -1,0 +1,30 @@
+{
+  "name": "openclaw-autonomous-team-starter",
+  "version": "1.0.0",
+  "description": "Starter for autonomous OpenClaw teams on Podman",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "docs:build": "npm --prefix docs run docs:build",
+    "docs:dev": "npm --prefix docs run docs:dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/issues"
+  },
+  "homepage": "https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter#readme",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

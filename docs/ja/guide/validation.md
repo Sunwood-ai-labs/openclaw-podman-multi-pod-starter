@@ -2,8 +2,8 @@
 
 ## 同梱レポート
 
-- [GLM-5-Turbo report](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/blob/main/reports/pod-openclaw-glm5-turbo-report.md)
-- [Gemma report](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/blob/main/reports/pod-openclaw-gemma-report.md)
+- [GLM-5-Turbo report](https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/blob/main/reports/pod-openclaw-glm5-turbo-report.md)
+- [Gemma report](https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/blob/main/reports/pod-openclaw-gemma-report.md)
 
 ## 確認していること
 
@@ -12,7 +12,9 @@
 - tool call 経由の file generation / execution
 - session transcript 上の `write` / `read` / `exec` 証跡
 
-## 会話ラボの operational smoke
+一部の report には、検証当時のローカル path、room 名、runtime identifier がそのまま残ります。
+
+## 会話ラボの運用スモークテスト
 
 Mattermost 側の配線を確認したい時は次を使います。
 
@@ -24,7 +26,7 @@ Mattermost 側の配線を確認したい時は次を使います。
 
 関連する lab 証跡:
 
-- [Mattermost autonomy QA inventory](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/blob/main/reports/qa-inventory-mattermost-autochat-2026-04-09.md)
+- [Mattermost autonomy QA inventory](https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/blob/main/reports/qa-inventory-mattermost-autochat-2026-04-09.md)
 
 既定の seed room は `triad-lab` ですが、workspace 指示や lab 構成によっては追加の public room を使う場合もあります。
 

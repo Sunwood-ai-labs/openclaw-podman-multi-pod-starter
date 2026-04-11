@@ -1,6 +1,6 @@
 <div align="center">
 
-# openclaw-podman-multi-pod-starter
+# openclaw-autonomous-team-starter
 
 ![Project header](./assets/header.svg)
 
@@ -8,18 +8,18 @@ Starter kit for running small teams of OpenClaw agents on Podman with isolated p
 
 [日本語 README](./README.ja.md)
 
-![CI](https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-podman-multi-pod-starter)
+![CI](https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/Sunwood-ai-labs/openclaw-autonomous-team-starter)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Podman](https://img.shields.io/badge/podman-kube%20play-892CA0)
 
-[Docs Site](https://sunwood-ai-labs.github.io/openclaw-podman-multi-pod-starter/)
+[Docs Site](https://sunwood-ai-labs.github.io/openclaw-autonomous-team-starter/)
 
 </div>
 
 ## Overview
 
-This repository is a Windows-first starter for booting one or more OpenClaw agents as Podman pods and turning them into a communicative local team.
+This repository is a Windows-first starter for standing up an autonomous OpenClaw team. Podman gives each agent an isolated runtime, and Mattermost provides the local coordination surface.
 
 What it includes:
 
@@ -40,7 +40,7 @@ OpenClaw's official docs explain Podman, multiple gateways, and model providers,
 
 This repository packages that glue into a starter kit instead of leaving it as ad-hoc operator setup.
 
-## What Makes It An Agent Team Starter
+## What Makes It An Autonomous Team Starter
 
 ### 1. One Agent, One Pod, One Workspace
 
@@ -83,7 +83,7 @@ The repository versions a sanitized subset of generated `.openclaw` files so the
 ## Quick Start: Boot A Triad
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -95,6 +95,8 @@ notepad .env
 .\scripts\launch.ps1 --count 3
 .\scripts\mattermost.ps1 smoke --count 3
 ```
+
+The public project name is `openclaw-autonomous-team-starter`, while the current helper command remains `openclaw-podman`.
 
 After that, you have:
 
@@ -118,7 +120,7 @@ Enable that when you want the team to speak on its own after the basic chat path
 If you want a minimal first pass before you boot a team:
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -139,7 +141,7 @@ Actual runtime command:
 podman kube play --replace --no-pod-prefix .\.openclaw\pod.yaml
 ```
 
-## Start An Agent Trio
+## Start A Three-Agent Team
 
 ```powershell
 .\scripts\init.ps1 --count 3
@@ -242,6 +244,10 @@ Those reports document:
 - agent-side file generation and execution
 - transcript-backed `write` / `read` / `exec` evidence
 
+Historical note:
+
+- reports may preserve the local paths, room names, and runtime identifiers that were present when each validation run actually happened
+
 ## Main Commands
 
 ```powershell
@@ -312,6 +318,8 @@ These generated config and scaffold files are written in a trackable form:
 - secrets are copied into mounted env files instead of being inlined into `pod.yaml`
 - Mattermost bot tokens are referenced from `openclaw.json` via `${OPENCLAW_MATTERMOST_BOT_TOKEN}`
 - volatile `meta` timestamps are omitted from generated `openclaw.json`
+
+Some tracked generated artifacts intentionally keep local checkout paths or stable internal identifiers such as `openclaw-podman` when they are part of runtime evidence.
 
 ## Trust Model
 

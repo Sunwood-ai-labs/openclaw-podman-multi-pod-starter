@@ -1,18 +1,18 @@
 import { defineConfig } from "vitepress";
 
-const repo = "https://github.com/Sunwood-ai-labs/openclaw-podman-multi-pod-starter";
+const repo = "https://github.com/Sunwood-ai-labs/openclaw-autonomous-team-starter";
 
 export default defineConfig({
-  title: "openclaw-podman-multi-pod-starter",
+  title: "openclaw-autonomous-team-starter",
   description:
-    "Starter kit for running small OpenClaw agent teams in Podman with isolated pods, persona scaffolds, and a local Mattermost lab.",
+    "Windows-first starter for autonomous OpenClaw teams with isolated runtimes, role scaffolds, and a local Mattermost coordination lab.",
   lang: "en-US",
-  base: "/openclaw-podman-multi-pod-starter/",
+  base: "/openclaw-autonomous-team-starter/",
   cleanUrls: true,
   lastUpdated: true,
   head: [["link", { rel: "icon", href: "/header.svg" }]],
   themeConfig: {
-    siteTitle: "openclaw-podman-multi-pod-starter",
+    siteTitle: "openclaw-autonomous-team-starter",
     logo: "/header.svg",
     socialLinks: [{ icon: "github", link: repo }],
     footer: {
@@ -27,7 +27,7 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "Guide", link: "/guide/quickstart" },
-          { text: "Agent Teams", link: "/guide/agent-teams" },
+          { text: "Autonomous Team Guide", link: "/guide/agent-teams" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "Validation", link: "/guide/validation" },
           { text: "GitHub", link: repo },
@@ -37,7 +37,7 @@ export default defineConfig({
             text: "Guide",
             items: [
               { text: "Quick Start", link: "/guide/quickstart" },
-              { text: "Agent Team Starter", link: "/guide/agent-teams" },
+              { text: "Autonomous Team Guide", link: "/guide/agent-teams" },
               { text: "Configuration", link: "/guide/configuration" },
               { text: "Validation", link: "/guide/validation" },
             ],
@@ -51,7 +51,7 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "ガイド", link: "/ja/guide/quickstart" },
-          { text: "エージェントチーム", link: "/ja/guide/agent-teams" },
+          { text: "自律チーム導入", link: "/ja/guide/agent-teams" },
           { text: "設定", link: "/ja/guide/configuration" },
           { text: "検証", link: "/ja/guide/validation" },
           { text: "GitHub", link: repo },
@@ -61,7 +61,7 @@ export default defineConfig({
             text: "ガイド",
             items: [
               { text: "クイックスタート", link: "/ja/guide/quickstart" },
-              { text: "エージェントチーム導入", link: "/ja/guide/agent-teams" },
+              { text: "自律チーム導入", link: "/ja/guide/agent-teams" },
               { text: "設定", link: "/ja/guide/configuration" },
               { text: "検証", link: "/ja/guide/validation" },
             ],

@@ -1,6 +1,6 @@
 # Quick Start
 
-This page is the fastest path to a working local team. If you want the role scaffolds and collaboration model in more detail, continue to [Agent Team Starter](/guide/agent-teams) after the first run.
+This page is the fastest path to a working local team. If you want the role scaffolds and collaboration model in more detail, continue to [Autonomous Team Guide](/guide/agent-teams) after the first run.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ This page is the fastest path to a working local team. If you want the role scaf
 ## Boot A Three-Agent Team
 
 ```powershell
-cd D:\Prj\openclaw-podman-starter
+cd D:\Prj\openclaw-autonomous-team-starter
 uv sync
 Copy-Item .env.example .env
 notepad .env
@@ -24,6 +24,9 @@ notepad .env
 .\scripts\launch.ps1 --count 3
 .\scripts\mattermost.ps1 smoke --count 3
 ```
+
+Public project name: `openclaw-autonomous-team-starter`
+Current helper command: `openclaw-podman`
 
 ## What Gets Created
 

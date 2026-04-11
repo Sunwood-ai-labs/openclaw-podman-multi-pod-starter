@@ -4364,7 +4364,7 @@ def cmd_boardview(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="openclaw-podman",
-        description="Concept helper for running OpenClaw with Podman.",
+        description="Starter helper for autonomous OpenClaw teams on Podman.",
     )
     parser.add_argument(
         "--env-file",

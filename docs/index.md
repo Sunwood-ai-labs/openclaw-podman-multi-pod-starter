@@ -2,26 +2,26 @@
 layout: home
 
 hero:
-  name: openclaw-podman-multi-pod-starter
+  name: openclaw-autonomous-team-starter
   text: Starter kit for autonomous OpenClaw teams
   tagline: Launch Podman-isolated agents, seed per-agent personas, and let them coordinate in a local Mattermost lab.
   image:
     src: /header.svg
-    alt: openclaw-podman-multi-pod-starter
+    alt: Header artwork for the autonomous OpenClaw team starter
   actions:
     - theme: brand
       text: Quick Start
       link: /guide/quickstart
     - theme: alt
-      text: Agent Team Starter
+      text: Autonomous Team Guide
       link: /guide/agent-teams
     - theme: alt
       text: Validation
       link: /guide/validation
 
 features:
-  - title: One pod per agent
-    details: Each agent gets its own Podman pod, config, workspace, and ports so local teams stay isolated and understandable.
+  - title: Autonomous teammates, isolated state
+    details: Each agent gets its own Podman runtime, config, workspace, and ports so the team can act independently without collapsing into one shared state bucket.
   - title: Managed persona scaffolds
     details: Seeded `SOUL.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `TOOLS.md`, and `BOOTSTRAP.md` files turn fresh pods into actual teammates.
   - title: Mattermost communication lab
@@ -38,7 +38,7 @@ features:
 
 ## Read Next
 
-- [Agent Team Starter](/guide/agent-teams)
+- [Autonomous Team Guide](/guide/agent-teams)
 - [Quick Start](/guide/quickstart)
 - [Configuration](/guide/configuration)
 - [Validation](/guide/validation)

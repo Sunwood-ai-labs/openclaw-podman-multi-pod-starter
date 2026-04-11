@@ -1,4 +1,4 @@
-# エージェントチーム導入
+# 自律チーム導入
 
 このリポジトリは単なる Podman wrapper ではありません。複数の OpenClaw agent が別々の役割を持ち、状態を分離し、同じ会話面で連携できるように組んであります。
 
@@ -64,7 +64,7 @@ workspace には次の managed file が入ります。
 最初から 3 人チームとして扱いやすい役割が入っています。
 
 - `いおり`: systems / deployment 担当
-- `つむぎ`: builder / prompt shaping 担当
-- `さく`: verification / risk check 担当
+- `つむぎ`: 構築 / prompt shaping 担当
+- `さく`: 検証 / risk check 担当
 
 小さなチームで議論と handoff を回すには、この 3 人構成がいちばん分かりやすい出発点です。

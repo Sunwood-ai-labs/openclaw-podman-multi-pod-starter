@@ -1,6 +1,6 @@
-# Agent Team Starter
+# Autonomous Team Guide
 
-This repository is not just a Podman wrapper. It is structured so a small group of OpenClaw agents can boot with distinct roles, keep separate state, and communicate through a shared local surface.
+This repository is not just a Podman wrapper. It is structured so a small group of OpenClaw agents can wake up as distinct teammates, keep separate state, and coordinate through a shared local surface.
 
 ## What Each Agent Gets
 
