@@ -19,7 +19,7 @@ export default defineConfig({
   ],
   themeConfig: {
     siteTitle: "onizuka-openclaw-autonomous-team-starter",
-    logo: "/header.svg",
+    logo: "/favicon.svg",
     socialLinks: [{ icon: "github", link: repo }],
     footer: {
       message: "Released under the MIT License.",
