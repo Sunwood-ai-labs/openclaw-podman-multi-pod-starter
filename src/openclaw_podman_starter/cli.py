@@ -2277,7 +2277,7 @@ def ensure_openclaw_config(cfg: Config) -> None:
         channels = ensure_object(payload, "channels")
         mattermost = ensure_object(channels, "mattermost")
         mattermost["enabled"] = True
-        mattermost["botToken"] = mattermost_token
+        mattermost["botToken"] = "${OPENCLAW_MATTERMOST_BOT_TOKEN}"
         mattermost["baseUrl"] = mattermost_base_url
 
         for env_key, config_key in (

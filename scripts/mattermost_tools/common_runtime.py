@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -41,6 +42,7 @@ MIN_SECONDS_BETWEEN_ANY_TWO_POSTS = 60
 MIN_SECONDS_BETWEEN_SAME_SPEAKER_POSTS = 4 * 60
 
 BOT_IDS: dict[str, str] = {}
+ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -116,6 +118,10 @@ def load_openclaw_config() -> dict[str, object]:
     return payload
 
 
+def resolve_env_placeholders(raw_value: str, env: dict[str, str]) -> str:
+    return ENV_PLACEHOLDER_RE.sub(lambda match: env.get(match.group(1), match.group(0)), raw_value)
+
+
 def load_mattermost_runtime() -> tuple[str, str]:
     config = load_openclaw_config()
     channels = config.get("channels")
@@ -124,8 +130,9 @@ def load_mattermost_runtime() -> tuple[str, str]:
     mattermost = channels.get("mattermost")
     if not isinstance(mattermost, dict):
         raise RuntimeError("OpenClaw config is missing channels.mattermost")
-    base_url = str(mattermost.get("baseUrl", "")).strip()
-    bot_token = str(mattermost.get("botToken", "")).strip()
+    control_env = {**os.environ, **parse_env_file(CONTROL_ENV_PATH)}
+    base_url = resolve_env_placeholders(str(mattermost.get("baseUrl", "")), control_env).strip()
+    bot_token = resolve_env_placeholders(str(mattermost.get("botToken", "")), control_env).strip()
     if not base_url or not bot_token:
         raise RuntimeError("Mattermost baseUrl/botToken is missing from openclaw.json")
     return base_url, bot_token
