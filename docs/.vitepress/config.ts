@@ -30,6 +30,8 @@ export default defineConfig({
           { text: "Autonomous Team Guide", link: "/guide/agent-teams" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "Validation", link: "/guide/validation" },
+          { text: "Releases", link: "/guide/releases" },
+          { text: "Articles", link: "/guide/articles" },
           { text: "GitHub", link: repo },
         ],
         sidebar: [
@@ -42,6 +44,15 @@ export default defineConfig({
               { text: "Validation", link: "/guide/validation" },
             ],
           },
+          {
+            text: "Release Collateral",
+            items: [
+              { text: "Release Notes Index", link: "/guide/releases" },
+              { text: "v0.1.0 Release Notes", link: "/guide/releases/v0.1.0" },
+              { text: "Articles Index", link: "/guide/articles" },
+              { text: "Launching v0.1.0", link: "/guide/articles/v0.1.0-launch" },
+            ],
+          },
         ],
       },
     },
@@ -51,9 +62,11 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "ガイド", link: "/ja/guide/quickstart" },
-          { text: "自律チーム導入", link: "/ja/guide/agent-teams" },
+          { text: "自律チーム案内", link: "/ja/guide/agent-teams" },
           { text: "設定", link: "/ja/guide/configuration" },
           { text: "検証", link: "/ja/guide/validation" },
+          { text: "リリース", link: "/ja/guide/releases" },
+          { text: "記事", link: "/ja/guide/articles" },
           { text: "GitHub", link: repo },
         ],
         sidebar: [
@@ -61,9 +74,18 @@ export default defineConfig({
             text: "ガイド",
             items: [
               { text: "クイックスタート", link: "/ja/guide/quickstart" },
-              { text: "自律チーム導入", link: "/ja/guide/agent-teams" },
+              { text: "自律チーム案内", link: "/ja/guide/agent-teams" },
               { text: "設定", link: "/ja/guide/configuration" },
               { text: "検証", link: "/ja/guide/validation" },
+            ],
+          },
+          {
+            text: "リリース資料",
+            items: [
+              { text: "リリースノート一覧", link: "/ja/guide/releases" },
+              { text: "v0.1.0 リリースノート", link: "/ja/guide/releases/v0.1.0" },
+              { text: "記事一覧", link: "/ja/guide/articles" },
+              { text: "v0.1.0 公開ウォークスルー", link: "/ja/guide/articles/v0.1.0-launch" },
             ],
           },
         ],

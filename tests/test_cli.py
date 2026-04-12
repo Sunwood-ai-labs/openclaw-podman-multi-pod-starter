@@ -263,7 +263,10 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(payload["channels"]["mattermost"]["enabled"], True)
             self.assertEqual(payload["channels"]["mattermost"]["baseUrl"], "http://mattermost:8065")
-            self.assertEqual(payload["channels"]["mattermost"]["botToken"], "test-bot-token")
+            self.assertEqual(
+                payload["channels"]["mattermost"]["botToken"],
+                "${OPENCLAW_MATTERMOST_BOT_TOKEN}",
+            )
             self.assertEqual(payload["channels"]["mattermost"]["chatmode"], "oncall")
             self.assertEqual(payload["channels"]["mattermost"]["groups"]["*"]["requireMention"], True)
             self.assertEqual(payload["channels"]["mattermost"]["network"]["dangerouslyAllowPrivateNetwork"], True)
@@ -309,7 +312,10 @@ class CliTests(unittest.TestCase):
             self.assertIn("ZAI_API_KEY=test-zai-key", state_env_text)
             self.assertIn("OPENCLAW_MATTERMOST_BOT_TOKEN=mm-token-1", state_env_text)
 
-            self.assertEqual(openclaw_payload["channels"]["mattermost"]["botToken"], "mm-token-1")
+            self.assertEqual(
+                openclaw_payload["channels"]["mattermost"]["botToken"],
+                "${OPENCLAW_MATTERMOST_BOT_TOKEN}",
+            )
             self.assertNotIn("meta", openclaw_payload)
 
             env_entries = {

@@ -2,48 +2,58 @@
 layout: home
 
 hero:
-  name: onizuka-openclaw-autonomous-team-starter
-  text: 自律型 OpenClaw チームのスターターキット
-  tagline: 自律エージェントや AGI 指向開発を目指す ONIZUKA シリーズの一つとして、OpenClaw チームを立ち上げるための土台です。
+  name: "onizuka-openclaw-autonomous-team-starter"
+  text: "自律 OpenClaw チームのスターターキット"
+  tagline: "ONIZUKA シリーズの一員として、隔離ランタイム・役割 scaffold・Mattermost 連携をまとめた Windows 前提のスターターです。"
   image:
-    src: /header.svg
-    alt: ONIZUKA シリーズの自律型 OpenClaw チームスターターのヘッダー画像
+    src: "/header.svg"
+    alt: "ONIZUKA シリーズ向け自律 OpenClaw チームスターターのヘッダー画像"
   actions:
     - theme: brand
-      text: クイックスタート
-      link: /ja/guide/quickstart
+      text: "クイックスタート"
+      link: "/ja/guide/quickstart"
     - theme: alt
-      text: 自律チーム導入
-      link: /ja/guide/agent-teams
+      text: "自律チーム案内"
+      link: "/ja/guide/agent-teams"
     - theme: alt
-      text: 検証
-      link: /ja/guide/validation
+      text: "検証"
+      link: "/ja/guide/validation"
+    - theme: alt
+      text: "v0.1.0 リリースノート"
+      link: "/ja/guide/releases/v0.1.0"
 
 features:
-  - title: 自律チーム用の分離実行環境
-    details: "各エージェントに Podman 実行環境、config、workspace、port を分けるので、チーム全体が 1 つの状態に潰れません。"
-  - title: 人格 scaffold 付き
-    details: "`SOUL.md`、`IDENTITY.md`、`USER.md`、`HEARTBEAT.md`、`TOOLS.md`、`BOOTSTRAP.md` を最初から配布します。"
-  - title: Mattermost 会話ラボ
-    details: "ローカル Mattermost pod、bot seed、smoke test、heartbeat autonomy まで 1 つの導線で試せます。"
+  - title: "自律チームごとの隔離状態"
+    details: "各 agent に Podman runtime、config、workspace、port を分けて持たせるので、1 つの共有状態に潰れずに運用できます。"
+  - title: "管理された persona scaffold"
+    details: "`SOUL.md`、`IDENTITY.md`、`USER.md`、`HEARTBEAT.md`、`TOOLS.md`、`BOOTSTRAP.md` を自動配置して、起動直後から役割を持った teammate にできます。"
+  - title: "Mattermost 会話ラボ"
+    details: "ローカル Mattermost pod、bot seed、smoke test、heartbeat autonomy までを同じ repo で回せます。"
 ---
 
 ## この docs で分かること
 
-- `uv` と PowerShell で始める Windows 前提の導入手順
-- エージェントごとの workspace scaffold の役割
-- Mattermost で人間と agent が会話する導線
-- 検証済みモデルと validation の位置
+- `uv` と PowerShell で進める Windows 前提の導入手順
+- agent ごとの `pod.yaml` と workspace scaffold の考え方
+- Mattermost で人間と agent が会話するための運用導線
+- ローカルモデル検証と運用 QA への導線
 
 ## ONIZUKA シリーズ
 
-このリポジトリは、自律エージェントや AGI 指向の開発を目指す ONIZUKA シリーズの一つとして位置づけています。
+この repository は、自律 agent と AGI ワークフローを扱う ONIZUKA シリーズの一員です。
 
-- [ONIZUKA AGI Co. 紹介リポジトリ](https://github.com/onizuka-agi-co/onizuka-agi-co)
+- [ONIZUKA AGI Co. 紹介 repository](https://github.com/onizuka-agi-co/onizuka-agi-co)
+
+## 最新リリース
+
+- [v0.1.0 リリースノート](/ja/guide/releases/v0.1.0)
+- [v0.1.0 公開ウォークスルー](/ja/guide/articles/v0.1.0-launch)
 
 ## 次に読む
 
-- [自律チーム導入](/ja/guide/agent-teams)
+- [自律チーム案内](/ja/guide/agent-teams)
 - [クイックスタート](/ja/guide/quickstart)
 - [設定](/ja/guide/configuration)
 - [検証](/ja/guide/validation)
+- [リリースノート一覧](/ja/guide/releases)
+- [記事一覧](/ja/guide/articles)

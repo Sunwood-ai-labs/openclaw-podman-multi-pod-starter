@@ -307,6 +307,7 @@ uv run openclaw-podman mattermost lounge run-now --count 3
 - `scripts/` - PowerShell wrappers and automation entry points
 - `scripts/mattermost_tools/` - heartbeat-first Mattermost helper entrypoints and shared runtime code
 - `docs/` - VitePress docs
+- `mattermost-plugins/` - experimental Mattermost branding plugin bundles and packaged artifacts
 - `reports/` - validation reports
 - `.env.example` - starter environment template
 

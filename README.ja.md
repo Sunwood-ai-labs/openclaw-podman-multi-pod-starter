@@ -297,6 +297,7 @@ uv run openclaw-podman mattermost lounge run-now --count 3
 - `src/openclaw_podman_starter/` - helper CLI
 - `scripts/` - PowerShell wrapper と Mattermost helper
 - `docs/` - VitePress docs
+- `mattermost-plugins/` - 実験用 Mattermost ブランディング plugin の bundle と配布物
 - `reports/` - 検証レポート
 - `.env.example` - 環境変数テンプレート
 

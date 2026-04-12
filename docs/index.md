@@ -18,6 +18,9 @@ hero:
     - theme: alt
       text: Validation
       link: /guide/validation
+    - theme: alt
+      text: v0.1.0 Release Notes
+      link: /guide/releases/v0.1.0
 
 features:
   - title: Autonomous teammates, isolated state
@@ -42,9 +45,16 @@ This repository is positioned as one ONIZUKA-series project focused on autonomou
 
 - [ONIZUKA AGI Co. introduction repository](https://github.com/onizuka-agi-co/onizuka-agi-co)
 
+## Latest Release
+
+- [Release Notes: v0.1.0](/guide/releases/v0.1.0)
+- [Companion article: Launching v0.1.0](/guide/articles/v0.1.0-launch)
+
 ## Read Next
 
 - [Autonomous Team Guide](/guide/agent-teams)
 - [Quick Start](/guide/quickstart)
 - [Configuration](/guide/configuration)
 - [Validation](/guide/validation)
+- [Release Notes Index](/guide/releases)
+- [Articles Index](/guide/articles)
