@@ -1,20 +1,21 @@
 import { defineConfig } from "vitepress";
 
 const repo = "https://github.com/Sunwood-ai-labs/onizuka-openclaw-autonomous-team-starter";
+const base = "/onizuka-openclaw-autonomous-team-starter/";
 
 export default defineConfig({
   title: "onizuka-openclaw-autonomous-team-starter",
   description:
     "Windows-first ONIZUKA-series starter for autonomous OpenClaw teams with isolated runtimes, role scaffolds, and a local Mattermost coordination lab.",
   lang: "en-US",
-  base: "/onizuka-openclaw-autonomous-team-starter/",
+  base,
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
-    ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" }],
-    ["link", { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" }],
-    ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: `${base}favicon.svg` }],
+    ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: `${base}favicon-32x32.png` }],
+    ["link", { rel: "icon", type: "image/png", sizes: "16x16", href: `${base}favicon-16x16.png` }],
+    ["link", { rel: "apple-touch-icon", sizes: "180x180", href: `${base}apple-touch-icon.png` }],
   ],
   themeConfig: {
     siteTitle: "onizuka-openclaw-autonomous-team-starter",
