@@ -825,6 +825,143 @@ class CliTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "could not resolve bot users"):
                 cli.cmd_mattermost_smoke(args)
 
+    def test_run_mattermost_lounge_turn_now_retries_after_pairing_required(self) -> None:
+        instance = self.build_instance()
+        completed = [
+            mock.Mock(returncode=1, stdout="", stderr="gateway connect failed: GatewayClientRequestError: pairing required"),
+            mock.Mock(returncode=0, stdout='{"requestId":"req-1"}', stderr=""),
+            mock.Mock(returncode=0, stdout='{"ok":true}', stderr=""),
+        ]
+        with mock.patch.object(cli.subprocess, "run", side_effect=completed):
+            result = cli.run_mattermost_lounge_turn_now(instance, timeout_seconds=30)
+
+        self.assertEqual(result, "queued")
+
+    def test_cmd_mattermost_lounge_run_now_fails_when_no_new_posts_observed(self) -> None:
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=2, timeout_ms=30000, wait_seconds=0)
+        with mock.patch.object(cli, "ensure_env_file"), mock.patch.object(
+            cli, "truthy_env", return_value=True
+        ), mock.patch.object(
+            cli, "parse_env_file", return_value={"OPENCLAW_MATTERMOST_AUTONOMY_ENABLED": "true"}
+        ), mock.patch.object(
+            cli, "ensure_scaled_instance_state", side_effect=[self.build_instance(), self.build_instance(), self.build_instance()]
+        ), mock.patch.object(
+            cli, "scaled_instance", return_value=self.build_instance()
+        ), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(
+            cli, "run_mattermost_lounge_turn_now", return_value="queued"
+        ), mock.patch.object(
+            cli,
+            "pod_local_mattermost_state",
+            side_effect=[
+                {"channels": [{"threads": [{"last_post_id": "post-1", "root_post_id": "post-1", "last_handle": "iori", "root_preview": "before"}]}]},
+                {"channels": [{"threads": [{"last_post_id": "post-1", "root_post_id": "post-1", "last_handle": "iori", "root_preview": "before"}]}]},
+            ],
+        ), mock.patch.object(
+            cli,
+            "load_mattermost_config",
+            return_value=cli.MattermostConfig(
+                env_file=Path("D:/tmp/.env"),
+                root_dir=Path("D:/tmp/.openclaw/mattermost"),
+                pod_name="mattermost-pod",
+                container_name="mattermost",
+                image="image",
+                host_port=8065,
+                publish_host="127.0.0.1",
+                network="podman",
+                base_url="http://mattermost:8065",
+                raw_env={},
+            ),
+        ):
+            with self.assertRaisesRegex(SystemExit, "produced no new channel activity"):
+                cli.cmd_mattermost_lounge_run_now(args)
+
+    def test_cmd_mattermost_lounge_run_now_prints_new_posts(self) -> None:
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=2, timeout_ms=30000, wait_seconds=0)
+        output = io.StringIO()
+        with redirect_stdout(output), mock.patch.object(cli, "ensure_env_file"), mock.patch.object(
+            cli, "truthy_env", return_value=True
+        ), mock.patch.object(
+            cli, "parse_env_file", return_value={"OPENCLAW_MATTERMOST_AUTONOMY_ENABLED": "true"}
+        ), mock.patch.object(
+            cli, "ensure_scaled_instance_state", side_effect=[self.build_instance(), self.build_instance(), self.build_instance()]
+        ), mock.patch.object(
+            cli, "scaled_instance", return_value=self.build_instance()
+        ), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(
+            cli, "run_mattermost_lounge_turn_now", return_value="queued"
+        ), mock.patch.object(
+            cli,
+            "pod_local_mattermost_state",
+            side_effect=[
+                {"channels": [{"threads": [{"last_post_id": "post-1", "root_post_id": "post-1", "last_handle": "iori", "root_preview": "before"}]}]},
+                {"channels": [{"threads": [{"last_post_id": "post-2", "root_post_id": "post-1", "last_handle": "iori", "root_preview": "new activity"}]}]},
+            ],
+        ), mock.patch.object(
+            cli,
+            "load_mattermost_config",
+            return_value=cli.MattermostConfig(
+                env_file=Path("D:/tmp/.env"),
+                root_dir=Path("D:/tmp/.openclaw/mattermost"),
+                pod_name="mattermost-pod",
+                container_name="mattermost",
+                image="image",
+                host_port=8065,
+                publish_host="127.0.0.1",
+                network="podman",
+                base_url="http://mattermost:8065",
+                raw_env={},
+            ),
+        ):
+            exit_code = cli.cmd_mattermost_lounge_run_now(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("iori: new activity", output.getvalue())
+
+    def test_cmd_mattermost_lounge_status_uses_pod_local_state(self) -> None:
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=2)
+        output = io.StringIO()
+        with redirect_stdout(output), mock.patch.object(cli, "ensure_env_file"), mock.patch.object(
+            cli, "parse_env_file", return_value={"OPENCLAW_MATTERMOST_AUTONOMY_ENABLED": "true", "OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL": "6m"}
+        ), mock.patch.object(
+            cli, "ensure_scaled_instance_state", side_effect=[self.build_instance(), self.build_instance()]
+        ), mock.patch.object(
+            cli, "scaled_instance", return_value=self.build_instance()
+        ), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(
+            cli, "main_agent_heartbeat", return_value={"every": "10m"}
+        ), mock.patch.object(
+            cli, "autochat_job", return_value=None
+        ), mock.patch.object(
+            cli, "mattermost_lounge_job", return_value=None
+        ), mock.patch.object(
+            cli,
+            "pod_local_mattermost_state",
+            return_value={"channels": [{"threads": [{"last_post_id": "post-2", "root_post_id": "post-1", "last_handle": "saku", "root_preview": "autonomy post"}]}]},
+        ), mock.patch.object(
+            cli,
+            "load_mattermost_config",
+            return_value=cli.MattermostConfig(
+                env_file=Path("D:/tmp/.env"),
+                root_dir=Path("D:/tmp/.openclaw/mattermost"),
+                pod_name="mattermost-pod",
+                container_name="mattermost",
+                image="image",
+                host_port=8065,
+                publish_host="127.0.0.1",
+                network="podman",
+                base_url="http://mattermost:8065",
+                raw_env={},
+            ),
+        ):
+            exit_code = cli.cmd_mattermost_lounge_status(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("saku: autonomy post", output.getvalue())
+
     def test_refresh_scaled_instances_after_mattermost_seed_reloads_running_instances(self) -> None:
         fake_instances = [self.build_instance()]
         with mock.patch.object(cli, "parse_env_file", return_value={}), mock.patch.object(

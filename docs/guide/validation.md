@@ -24,6 +24,22 @@ If you want to confirm the Mattermost team wiring rather than the model/tool rep
 
 Treat that as an operational smoke check for seeded bot replies, not as a blanket proof of every future autonomous conversation.
 
+If you also want to verify heartbeat-driven autonomy, use this sequence:
+
+```powershell
+.\scripts\mattermost.ps1 smoke --count 3
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 20
+```
+
+Interpretation:
+
+- `smoke` proves mention/reply wiring for the seeded bots.
+- `lounge enable` writes the heartbeat config into each selected instance.
+- `lounge status` shows the current heartbeat config plus recent channel activity from a pod-local Mattermost read.
+- `lounge run-now` is a manual wake for immediate verification. It succeeds only when new Mattermost activity is observed after the wake.
+
 Related lab evidence:
 
 - [Mattermost autonomy QA inventory](https://github.com/Sunwood-ai-labs/onizuka-openclaw-autonomous-team-starter/blob/main/reports/qa-inventory-mattermost-autochat-2026-04-09.md)

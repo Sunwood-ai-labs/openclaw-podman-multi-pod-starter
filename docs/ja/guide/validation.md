@@ -24,6 +24,22 @@ Mattermost 側の配線を確認したい時は次を使います。
 
 これは seed 済み bot の返信確認を行う運用 smoke であり、将来のすべての自律会話を一括で証明するものではありません。
 
+heartbeat autonomy まで確認したい場合は、次の順番で実行します。
+
+```powershell
+.\scripts\mattermost.ps1 smoke --count 3
+.\scripts\mattermost.ps1 lounge enable --count 3
+.\scripts\mattermost.ps1 lounge status --count 3
+.\scripts\mattermost.ps1 lounge run-now --count 3 --wait-seconds 20
+```
+
+見方:
+
+- `smoke` は seed 済み bot の mention/reply 導線確認です。
+- `lounge enable` は対象 instance に heartbeat 設定を書き込みます。
+- `lounge status` は現在の heartbeat 設定と、pod-local な Mattermost 読み取り結果を表示します。
+- `lounge run-now` は即時検証用の manual wake です。wake 後に新しい Mattermost activity が観測できた時だけ成功として扱います。
+
 関連する lab 証跡:
 
 - [Mattermost autonomy QA inventory](https://github.com/Sunwood-ai-labs/onizuka-openclaw-autonomous-team-starter/blob/main/reports/qa-inventory-mattermost-autochat-2026-04-09.md)

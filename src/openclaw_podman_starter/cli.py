@@ -1583,6 +1583,48 @@ def run_autochat_job_now(instance: ScaledInstance, timeout_ms: int = 180000) -> 
 
 
 def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: int = 180) -> str:
+    command_timeout = max(60, timeout_seconds + 30)
+
+    def run_command(
+        command: list[str],
+        failure_label: str,
+        allow_messages: tuple[str, ...] = (),
+        allow_timeout: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=command_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            if allow_timeout:
+                return subprocess.CompletedProcess(
+                    command,
+                    124,
+                    exc.stdout or "",
+                    exc.stderr or "",
+                )
+            raise SystemExit(
+                f"{failure_label} for instance {instance.instance_id}\n"
+                f"command: {command_for_display(command)}\n"
+                f"stdout:\n{exc.stdout or ''}\n"
+                f"stderr:\n{exc.stderr or ''}"
+            ) from exc
+        combined = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
+        normalized = combined.lower()
+        if completed.returncode != 0 and not any(message.lower() in normalized for message in allow_messages):
+            raise SystemExit(
+                f"{failure_label} for instance {instance.instance_id}\n"
+                f"command: {command_for_display(command)}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+        return completed
+
     event_command = [
         podman_bin(),
         "exec",
@@ -1593,16 +1635,40 @@ def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: in
         "--mode",
         "now",
         "--json",
+        "--timeout",
+        str(max(30000, timeout_seconds * 1000)),
         "--text",
         "manual heartbeat wake from openclaw-podman-starter",
     ]
-    event_completed = subprocess.run(
+    event_completed = run_command(
         event_command,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
+        "manual heartbeat wake failed",
+        allow_messages=("pairing required",),
+        allow_timeout=True,
     )
+    combined = "\n".join(part for part in (event_completed.stdout.strip(), event_completed.stderr.strip()) if part)
+    if event_completed.returncode != 0 and "pairing required" in combined.lower():
+        approve_command = [
+            podman_bin(),
+            "exec",
+            instance.container_name,
+            "openclaw",
+            "devices",
+            "approve",
+            "--latest",
+            "--json",
+        ]
+        run_command(
+            approve_command,
+            "device pairing approval failed",
+            allow_messages=("No pending device pairing requests to approve",),
+        )
+        event_completed = run_command(
+            event_command,
+            "manual heartbeat wake failed after pairing retry",
+            allow_timeout=True,
+        )
+        combined = "\n".join(part for part in (event_completed.stdout.strip(), event_completed.stderr.strip()) if part)
     if event_completed.returncode != 0:
         raise SystemExit(
             f"manual heartbeat wake failed for instance {instance.instance_id}\n"
@@ -1610,55 +1676,17 @@ def run_mattermost_lounge_turn_now(instance: ScaledInstance, timeout_seconds: in
             f"stdout:\n{event_completed.stdout}\n"
             f"stderr:\n{event_completed.stderr}"
         )
-
-    last_command = [
-        podman_bin(),
-        "exec",
-        instance.container_name,
-        "openclaw",
-        "system",
-        "heartbeat",
-        "last",
-        "--json",
-        "--expect-final",
-        "--timeout",
-        str(max(30000, timeout_seconds * 1000)),
-    ]
-    completed = subprocess.run(
-        last_command,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    if completed.returncode != 0:
-        raise SystemExit(
-            f"heartbeat last failed for instance {instance.instance_id}\n"
-            f"command: {command_for_display(last_command)}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
-        )
-
+    if not combined:
+        return "queued"
     try:
-        payload = json.loads(completed.stdout.strip() or completed.stderr.strip())
-    except json.JSONDecodeError as exc:
-        raise SystemExit(
-            f"heartbeat last returned non-JSON output for instance {instance.instance_id}\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise SystemExit(f"heartbeat last did not return a JSON object for instance {instance.instance_id}.")
-
-    status = str(payload.get("status", "unknown")).strip() or "unknown"
-    preview = str(payload.get("preview", "")).replace("\n", " ").strip()
-    if preview:
-        return f"{status}: {preview}"
-    reason = str(payload.get("reason", "")).strip()
-    if reason:
-        return f"{status}: {reason}"
-    return status
+        payload = json.loads(event_completed.stdout.strip() or event_completed.stderr.strip())
+    except json.JSONDecodeError:
+        if event_completed.returncode == 124:
+            return "queued (timeout)"
+        return console_safe(combined)
+    if isinstance(payload, dict) and payload.get("ok") is True:
+        return "queued"
+    return console_safe(json.dumps(payload, ensure_ascii=False))
 
 
 def read_openclaw_config_payload(cfg: Config) -> dict[str, object]:
@@ -3471,6 +3499,62 @@ def recent_mattermost_channel_posts(cfg: MattermostConfig, token: str, channel_i
     return result
 
 
+def pod_local_mattermost_state(instance: ScaledInstance) -> dict[str, object]:
+    command = [
+        podman_bin(),
+        "exec",
+        instance.container_name,
+        "python3",
+        f"{CONTAINER_MATTERMOST_TOOLS_DIR}/get_state.py",
+        "--instance",
+        str(instance.instance_id),
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise SystemExit(
+            f"pod-local Mattermost state failed for instance {instance.instance_id}\n"
+            f"command: {command_for_display(command)}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    try:
+        payload = json.loads(completed.stdout.strip() or completed.stderr.strip())
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"pod-local Mattermost state returned non-JSON output for instance {instance.instance_id}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"pod-local Mattermost state did not return a JSON object for instance {instance.instance_id}.")
+    return payload
+
+
+def recent_threads_from_mattermost_state(state: dict[str, object], limit: int = 8) -> list[dict[str, object]]:
+    channels = state.get("channels")
+    if not isinstance(channels, list):
+        return []
+    if not channels:
+        return []
+    channel = channels[0]
+    if not isinstance(channel, dict):
+        return []
+    threads = channel.get("threads")
+    if not isinstance(threads, list):
+        return []
+    result: list[dict[str, object]] = []
+    for thread in threads[:limit]:
+        if isinstance(thread, dict):
+            result.append(thread)
+    return result
+
+
 def mattermost_smoke_reply_has_error(message: str) -> bool:
     normalized = message.lower()
     return any(token in normalized for token in MATTERMOST_SMOKE_ERROR_TOKENS)
@@ -3917,17 +4001,19 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
     instance_ids = discussion_instance_ids(args.count)
 
     ensure_env_file(args.env_file)
-    mm_cfg = load_mattermost_config(args.env_file)
     overall = 0
     env_values = parse_env_file(args.env_file)
     enabled = truthy_env(env_values.get("OPENCLAW_MATTERMOST_AUTONOMY_ENABLED"))
     print_kv("heartbeat autonomy enabled", "true" if enabled else "false")
     print_kv("heartbeat interval", env_values.get("OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL", "6m"))
+    state_probe_instance: ScaledInstance | None = None
     for instance_id in instance_ids:
         instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
         running = container_running(instance.container_name)
         marker = "[ok]" if running else "[warn]"
         print(f"{marker} instance {instance_id}: pod={instance.pod_name} container={instance.container_name} running={running}")
+        if running and state_probe_instance is None:
+            state_probe_instance = instance
         heartbeat = main_agent_heartbeat(instance)
         if heartbeat is None:
             print("  heartbeat: disabled")
@@ -3944,25 +4030,15 @@ def cmd_mattermost_lounge_status(args: argparse.Namespace) -> int:
                 print(f"  legacy lounge cron still present: {legacy_lounge_job.get('name')}")
                 overall = 1
 
-    print_kv("channel url", mattermost_channel_url(mm_cfg))
+    print_kv("channel url", mattermost_channel_url(load_mattermost_config(args.env_file)))
     try:
-        token = mattermost_login(
-            mm_cfg,
-            mm_cfg.raw_env["OPENCLAW_MATTERMOST_OPERATOR_USERNAME"],
-            mattermost_state_values(args.env_file)[MATTERMOST_OPERATOR_PASSWORD_KEY],
-        )
-        channel_id = mattermost_channel_id(mm_cfg, token)
-        for post in recent_mattermost_channel_posts(mm_cfg, token, channel_id):
-            user_id = str(post.get("user_id", ""))
-            speaker = user_id
-            for instance_id in instance_ids:
-                username = mattermost_persona_username(instance_id)
-                resolved_user_id = mattermost_user_id(mm_cfg, username, token)
-                if user_id == resolved_user_id:
-                    speaker = username
-                    break
-            message = str(post.get("message", "")).replace("\n", " ").strip()
-            print(f"  {speaker}: {message[:120]}")
+        if state_probe_instance is None:
+            raise SystemExit("No running instance available for Mattermost state inspection.")
+        state = pod_local_mattermost_state(state_probe_instance)
+        for thread in recent_threads_from_mattermost_state(state):
+            speaker = str(thread.get("last_handle") or thread.get("root_handle") or "?").strip() or "?"
+            preview = str(thread.get("root_preview", "")).replace("\n", " ").strip()
+            print(f"  {speaker}: {preview[:120]}")
     except Exception as exc:
         print(f"  recent thread fetch failed: {exc}")
         overall = 1
@@ -3975,6 +4051,13 @@ def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
     ensure_env_file(args.env_file)
     if not truthy_env(parse_env_file(args.env_file).get("OPENCLAW_MATTERMOST_AUTONOMY_ENABLED")):
         raise SystemExit("Mattermost heartbeat autonomy is disabled. Run `mattermost lounge enable` first.")
+    probe_instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_ids[0]))
+    before_state = pod_local_mattermost_state(probe_instance)
+    before_ids = {
+        str(thread.get("last_post_id", "") or thread.get("root_post_id", ""))
+        for thread in recent_threads_from_mattermost_state(before_state, limit=20)
+        if isinstance(thread, dict)
+    }
     for instance_id in instance_ids:
         instance = ensure_scaled_instance_state(scaled_instance(args.env_file, instance_id))
         if not container_running(instance.container_name):
@@ -3992,7 +4075,20 @@ def cmd_mattermost_lounge_run_now(args: argparse.Namespace) -> int:
     if args.wait_seconds > 0:
         time.sleep(args.wait_seconds)
 
+    after_state = pod_local_mattermost_state(probe_instance)
+    new_threads = [
+        thread
+        for thread in recent_threads_from_mattermost_state(after_state, limit=20)
+        if isinstance(thread, dict)
+        and str(thread.get("last_post_id", "") or thread.get("root_post_id", "")) not in before_ids
+    ]
     print_kv("channel url", mattermost_channel_url(load_mattermost_config(args.env_file)))
+    if not new_threads:
+        raise SystemExit("Mattermost heartbeat wake produced no new channel activity.")
+    for thread in new_threads:
+        speaker = str(thread.get("last_handle") or thread.get("root_handle") or "?").strip() or "?"
+        preview = str(thread.get("root_preview", "")).replace("\n", " ").strip()
+        print(f"  {speaker}: {preview[:120]}")
     return 0
 
 
@@ -4638,11 +4734,11 @@ def build_parser() -> argparse.ArgumentParser:
     mattermost_lounge_enable_parser.add_argument("--timeout", type=int, default=300, help="Compatibility placeholder; config is applied immediately and pods are reloaded (default: 300).")
     mattermost_lounge_enable_parser.set_defaults(func=cmd_mattermost_lounge_enable)
 
-    mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show Mattermost heartbeat autonomy status.")
+    mattermost_lounge_status_parser = mattermost_lounge_subparsers.add_parser("status", help="Show Mattermost heartbeat autonomy status and recent channel activity.")
     mattermost_lounge_status_parser.add_argument("--count", type=int, help="Scaled instance count to inspect (default: 3).")
     mattermost_lounge_status_parser.set_defaults(func=cmd_mattermost_lounge_status)
 
-    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Trigger one immediate heartbeat wake for each selected agent.")
+    mattermost_lounge_run_now_parser = mattermost_lounge_subparsers.add_parser("run-now", help="Trigger one immediate heartbeat wake for each selected agent and verify new Mattermost activity.")
     mattermost_lounge_run_now_parser.add_argument("--count", type=int, help="Scaled instance count to trigger (default: 3).")
     mattermost_lounge_run_now_parser.add_argument("--timeout-ms", type=int, default=300000, help="Per-turn timeout in ms for direct run-now execution (default: 300000).")
     mattermost_lounge_run_now_parser.add_argument("--wait-seconds", type=int, default=10, help="Wait this many seconds before printing the thread info (default: 10).")
