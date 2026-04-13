@@ -229,6 +229,21 @@ class CliTests(unittest.TestCase):
             self.assertEqual(values["OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL_INSTANCE_005"], "15m")
             self.assertEqual(values["OPENCLAW_MATTERMOST_AUTONOMY_INTERVAL_INSTANCE_006"], "60m")
 
+    def test_set_mattermost_autonomy_env_inherits_primary_model_when_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            env_file = temp_root / ".env"
+            write_env_file(env_file)
+            env_file.write_text(
+                env_file.read_text(encoding="utf-8") + "OPENCLAW_MODEL_REF=ollama/gemma4:e2b\nOPENCLAW_MATTERMOST_AUTONOMY_MODEL=\n",
+                encoding="utf-8",
+            )
+
+            cli.set_mattermost_autonomy_env(env_file, enabled=True, interval_minutes=6)
+            values = cli.parse_env_file(env_file)
+
+            self.assertEqual(values["OPENCLAW_MATTERMOST_AUTONOMY_MODEL"], "ollama/gemma4:e2b")
+
     def test_scaled_instance_applies_autonomy_interval_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
@@ -271,6 +286,31 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["channels"]["mattermost"]["groups"]["*"]["requireMention"], True)
             self.assertEqual(payload["channels"]["mattermost"]["network"]["dangerouslyAllowPrivateNetwork"], True)
             self.assertEqual(payload["plugins"]["entries"]["mattermost"]["enabled"], True)
+
+    def test_ensure_openclaw_config_does_not_leak_heartbeat_prompt_into_normal_message_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            env_file = temp_root / ".env"
+            write_env_file(env_file)
+            env_text = env_file.read_text(encoding="utf-8")
+            env_text += "\n".join(
+                [
+                    "OPENCLAW_MODEL_REF=ollama/gemma4:e2b",
+                    "OPENCLAW_MATTERMOST_ENABLED=true",
+                    "OPENCLAW_MATTERMOST_BASE_URL=http://mattermost:8065",
+                    "OPENCLAW_MATTERMOST_BOT_TOKEN=test-bot-token",
+                    "OPENCLAW_MATTERMOST_AUTONOMY_ENABLED=false",
+                    "",
+                ]
+            )
+            env_file.write_text(env_text, encoding="utf-8")
+
+            cfg = cli.ensure_state(cli.load_config(env_file))
+            payload = json.loads((cfg.config_dir / "openclaw.json").read_text(encoding="utf-8"))
+
+            self.assertNotIn("heartbeat", payload["agents"]["defaults"])
+            main_agent = next(entry for entry in payload["agents"]["list"] if entry["id"] == "main")
+            self.assertNotIn("heartbeat", main_agent)
 
     def test_scaled_instance_generated_files_keep_secrets_out_of_tracked_manifest_and_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -490,6 +530,70 @@ class CliTests(unittest.TestCase):
         self.assertEqual(runtime["model_base_url"], "https://api.z.ai/api/coding/paas/v4")
         self.assertEqual(runtime["model_api_key"], "test-zai-key")
 
+    def test_load_runtime_env_merges_state_env_and_control_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            state_env = temp_root / ".env"
+            control_env = temp_root / "control.env"
+            state_env.write_text("ZAI_API_KEY=test-zai-key\nOPENCLAW_MATTERMOST_BOT_TOKEN=bot-token\n", encoding="utf-8")
+            control_env.write_text(
+                "OPENCLAW_MODEL_REF=zai/glm-5.1\nOPENCLAW_MATTERMOST_TEAM_NAME=openclaw\nOPENCLAW_MATTERMOST_CHANNEL_NAME=triad-lab\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(mattermost_common_runtime, "STATE_ENV_PATH", state_env), mock.patch.object(
+                mattermost_common_runtime, "CONTROL_ENV_PATH", control_env
+            ):
+                env = mattermost_common_runtime.load_runtime_env()
+                values = mattermost_common_runtime.load_control_values()
+
+            self.assertEqual(env["OPENCLAW_MATTERMOST_BOT_TOKEN"], "bot-token")
+            self.assertEqual(values["model_provider"], "zai")
+            self.assertEqual(values["model_api_key"], "test-zai-key")
+            self.assertEqual(values["team_name"], "openclaw")
+
+    def test_load_mattermost_runtime_resolves_bot_token_from_state_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            state_env = temp_root / ".env"
+            control_env = temp_root / "control.env"
+            openclaw_config = temp_root / "openclaw.json"
+
+            state_env.write_text("OPENCLAW_MATTERMOST_BOT_TOKEN=bot-token-123\n", encoding="utf-8")
+            control_env.write_text("OPENCLAW_MATTERMOST_BASE_URL=http://mattermostverify:8065\n", encoding="utf-8")
+            openclaw_config.write_text(
+                json.dumps(
+                    {
+                        "channels": {
+                            "mattermost": {
+                                "baseUrl": "http://mattermostverify:8065",
+                                "botToken": "${OPENCLAW_MATTERMOST_BOT_TOKEN}",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(mattermost_common_runtime, "STATE_ENV_PATH", state_env), mock.patch.object(
+                mattermost_common_runtime, "CONTROL_ENV_PATH", control_env
+            ), mock.patch.object(mattermost_common_runtime, "OPENCLAW_CONFIG_PATH", openclaw_config):
+                base_url, bot_token = mattermost_common_runtime.load_mattermost_runtime()
+
+            self.assertEqual(base_url, "http://mattermostverify:8065")
+            self.assertEqual(bot_token, "bot-token-123")
+
+    def test_resolve_bot_ids_ignores_missing_optional_handles(self) -> None:
+        def fake_mattermost_request(base_url: str, token: str, path: str, **_: object) -> tuple[int, dict[str, str], object | None]:
+            if path.endswith("/iori"):
+                return 200, {}, {"id": "bot-iori"}
+            raise RuntimeError(f"HTTP 404 {base_url}{path}: not found")
+
+        with mock.patch.object(mattermost_common_runtime, "mattermost_request", side_effect=fake_mattermost_request):
+            bot_ids = mattermost_common_runtime.resolve_bot_ids("http://mattermostverify:8065", "token")
+
+        self.assertEqual(bot_ids, {"iori": "bot-iori"})
+
     def test_load_mattermost_config_uses_default_network(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
@@ -503,6 +607,237 @@ class CliTests(unittest.TestCase):
             expected_manifest = os.path.normcase(os.path.realpath(str(temp_root / ".openclaw" / "mattermost" / "pod.yaml")))
             actual_manifest = os.path.normcase(os.path.realpath(str(cli.mattermost_manifest_path(cfg))))
             self.assertEqual(actual_manifest, expected_manifest)
+
+    def test_effective_ollama_base_url_uses_podman_gateway_when_default_alias_fails(self) -> None:
+        with mock.patch.object(cli, "podman_machine_gateway_ip", return_value="172.27.208.1"), mock.patch.object(
+            cli, "http_endpoint_reachable", return_value=True
+        ):
+            resolved = cli.effective_ollama_base_url("http://host.containers.internal:11434")
+
+        self.assertEqual(resolved, "http://172.27.208.1:11434")
+
+    def test_raw_env_ollama_runtime_required_detects_per_instance_override(self) -> None:
+        self.assertTrue(
+            cli.raw_env_ollama_runtime_required(
+                {
+                    "OPENCLAW_MODEL_REF": "zai/glm-5.1",
+                    "OPENCLAW_MODEL_REF_INSTANCE_001": "ollama/gemma4:e2b",
+                }
+            )
+        )
+
+    def test_scaled_instance_state_writes_resolved_ollama_base_url_to_control_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            env_file = temp_root / ".env"
+            write_env_file(env_file)
+            env_file.write_text(
+                env_file.read_text(encoding="utf-8").replace(
+                    "OPENCLAW_OLLAMA_BASE_URL=http://127.0.0.1:11434",
+                    "OPENCLAW_OLLAMA_BASE_URL=http://host.containers.internal:11434",
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(cli, "podman_machine_gateway_ip", return_value="172.27.208.1"), mock.patch.object(
+                cli, "http_endpoint_reachable", return_value=True
+            ):
+                resolved = cli.ensure_scaled_instance_state(cli.scaled_instance(env_file, 1))
+
+            control_env_text = resolved.config.env_file.read_text(encoding="utf-8")
+            self.assertIn("OPENCLAW_OLLAMA_BASE_URL=http://172.27.208.1:11434", control_env_text)
+
+    def test_cmd_doctor_accepts_scaled_instances_without_single_instance_gateway_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            env_file = temp_root / ".env"
+            write_env_file(env_file)
+            cli.ensure_scaled_instance_state(cli.scaled_instance(env_file, 1))
+
+            args = argparse.Namespace(env_file=env_file)
+            output = io.StringIO()
+            with redirect_stdout(output), mock.patch.object(cli, "command_exists", return_value=True), mock.patch.object(
+                cli, "podman_available", return_value=True
+            ), mock.patch.object(cli, "http_endpoint_reachable", return_value=True):
+                exit_code = cli.cmd_doctor(args)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("[ok] scaled instances: 1 under", output.getvalue())
+            self.assertIn("[ok] gateway token: managed per scaled instance", output.getvalue())
+
+    def test_mattermost_smoke_reply_has_error_detects_llm_failure(self) -> None:
+        self.assertTrue(cli.mattermost_smoke_reply_has_error("LLM request failed: network connection error."))
+        self.assertFalse(cli.mattermost_smoke_reply_has_error("Mattermost is working and I am here."))
+
+    def test_cmd_mattermost_smoke_fails_on_error_reply(self) -> None:
+        cfg = cli.MattermostConfig(
+            env_file=Path("D:/tmp/.env"),
+            root_dir=Path("D:/tmp/.openclaw/mattermost"),
+            pod_name="mattermost-pod",
+            container_name="mattermost",
+            image="image",
+            host_port=8065,
+            publish_host="127.0.0.1",
+            network="podman",
+            base_url="http://mattermost:8065",
+            raw_env={
+                "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": "operator",
+                "OPENCLAW_MATTERMOST_TEAM_NAME": "openclaw",
+                "OPENCLAW_MATTERMOST_CHANNEL_NAME": "triad-lab",
+            },
+        )
+
+        def fake_api_request(
+            _cfg: cli.MattermostConfig,
+            path: str,
+            method: str = "GET",
+            token: str | None = None,
+            payload: dict[str, object] | None = None,
+        ) -> tuple[int, dict[str, str], object | None]:
+            if path == "/api/v4/users/username/iori":
+                return 200, {}, {"id": "user-1"}
+            if path == "/api/v4/posts" and method == "POST":
+                return 201, {}, {"id": "root-post"}
+            if path == "/api/v4/channels/channel-1/posts?page=0&per_page=100":
+                return 200, {}, {
+                    "posts": {
+                        "reply-1": {
+                            "root_id": "root-post",
+                            "user_id": "user-1",
+                            "message": "LLM request failed: network connection error.",
+                        }
+                    }
+                }
+            raise AssertionError(f"Unexpected path {path} method={method} payload={payload} token={token}")
+
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=1, timeout=5)
+        with mock.patch.object(cli, "load_mattermost_config", return_value=cfg), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(cli, "wait_for_mattermost_ready"), mock.patch.object(
+            cli, "mattermost_state_values", return_value={cli.MATTERMOST_OPERATOR_PASSWORD_KEY: "operator-password"}
+        ), mock.patch.object(cli, "mattermost_login", return_value="operator-token"), mock.patch.object(
+            cli, "mattermost_mmctl_json", return_value={"id": "channel-1"}
+        ), mock.patch.object(cli, "mattermost_api_request", side_effect=fake_api_request):
+            with self.assertRaisesRegex(SystemExit, "Mattermost smoke received error replies"):
+                cli.cmd_mattermost_smoke(args)
+
+    def test_cmd_mattermost_smoke_posts_one_root_per_requested_bot(self) -> None:
+        cfg = cli.MattermostConfig(
+            env_file=Path("D:/tmp/.env"),
+            root_dir=Path("D:/tmp/.openclaw/mattermost"),
+            pod_name="mattermost-pod",
+            container_name="mattermost",
+            image="image",
+            host_port=8065,
+            publish_host="127.0.0.1",
+            network="podman",
+            base_url="http://mattermost:8065",
+            raw_env={
+                "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": "operator",
+                "OPENCLAW_MATTERMOST_TEAM_NAME": "openclaw",
+                "OPENCLAW_MATTERMOST_CHANNEL_NAME": "triad-lab",
+            },
+        )
+        posted_messages: list[str] = []
+
+        def fake_api_request(
+            _cfg: cli.MattermostConfig,
+            path: str,
+            method: str = "GET",
+            token: str | None = None,
+            payload: dict[str, object] | None = None,
+        ) -> tuple[int, dict[str, str], object | None]:
+            if path == "/api/v4/users/username/iori":
+                return 200, {}, {"id": "user-1"}
+            if path == "/api/v4/users/username/tsumugi":
+                return 200, {}, {"id": "user-2"}
+            if path == "/api/v4/posts" and method == "POST":
+                assert payload is not None
+                posted_messages.append(str(payload["message"]))
+                if "@iori" in str(payload["message"]):
+                    return 201, {}, {"id": "root-1"}
+                if "@tsumugi" in str(payload["message"]):
+                    return 201, {}, {"id": "root-2"}
+            if path == "/api/v4/channels/channel-1/posts?page=0&per_page=100":
+                return 200, {}, {
+                    "posts": {
+                        "reply-1": {"root_id": "root-1", "user_id": "user-1", "message": "Iori online."},
+                        "reply-2": {"root_id": "root-2", "user_id": "user-2", "message": "Tsumugi online."},
+                    }
+                }
+            raise AssertionError(f"Unexpected path {path} method={method} payload={payload} token={token}")
+
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=2, timeout=5)
+        output = io.StringIO()
+        with redirect_stdout(output), mock.patch.object(cli, "load_mattermost_config", return_value=cfg), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(cli, "wait_for_mattermost_ready"), mock.patch.object(
+            cli, "mattermost_state_values", return_value={cli.MATTERMOST_OPERATOR_PASSWORD_KEY: "operator-password"}
+        ), mock.patch.object(cli, "mattermost_login", return_value="operator-token"), mock.patch.object(
+            cli, "mattermost_mmctl_json", return_value={"id": "channel-1"}
+        ), mock.patch.object(cli, "mattermost_api_request", side_effect=fake_api_request):
+            exit_code = cli.cmd_mattermost_smoke(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(posted_messages), 2)
+        self.assertTrue(any(message.startswith("@iori smoke-test") for message in posted_messages))
+        self.assertTrue(any(message.startswith("@tsumugi smoke-test") for message in posted_messages))
+
+    def test_cmd_mattermost_smoke_fails_when_requested_bot_is_missing(self) -> None:
+        cfg = cli.MattermostConfig(
+            env_file=Path("D:/tmp/.env"),
+            root_dir=Path("D:/tmp/.openclaw/mattermost"),
+            pod_name="mattermost-pod",
+            container_name="mattermost",
+            image="image",
+            host_port=8065,
+            publish_host="127.0.0.1",
+            network="podman",
+            base_url="http://mattermost:8065",
+            raw_env={
+                "OPENCLAW_MATTERMOST_OPERATOR_USERNAME": "operator",
+                "OPENCLAW_MATTERMOST_TEAM_NAME": "openclaw",
+                "OPENCLAW_MATTERMOST_CHANNEL_NAME": "triad-lab",
+            },
+        )
+
+        def fake_api_request(
+            _cfg: cli.MattermostConfig,
+            path: str,
+            method: str = "GET",
+            token: str | None = None,
+            payload: dict[str, object] | None = None,
+        ) -> tuple[int, dict[str, str], object | None]:
+            if path == "/api/v4/users/username/iori":
+                return 200, {}, {"id": "user-1"}
+            if path == "/api/v4/users/username/tsumugi":
+                return 200, {}, {}
+            raise AssertionError(f"Unexpected path {path} method={method} payload={payload} token={token}")
+
+        args = argparse.Namespace(env_file=Path("D:/tmp/.env"), count=2, timeout=5)
+        with mock.patch.object(cli, "load_mattermost_config", return_value=cfg), mock.patch.object(
+            cli, "container_running", return_value=True
+        ), mock.patch.object(cli, "wait_for_mattermost_ready"), mock.patch.object(
+            cli, "mattermost_state_values", return_value={cli.MATTERMOST_OPERATOR_PASSWORD_KEY: "operator-password"}
+        ), mock.patch.object(cli, "mattermost_login", return_value="operator-token"), mock.patch.object(
+            cli, "mattermost_mmctl_json", return_value={"id": "channel-1"}
+        ), mock.patch.object(cli, "mattermost_api_request", side_effect=fake_api_request):
+            with self.assertRaisesRegex(SystemExit, "could not resolve bot users"):
+                cli.cmd_mattermost_smoke(args)
+
+    def test_refresh_scaled_instances_after_mattermost_seed_reloads_running_instances(self) -> None:
+        fake_instances = [self.build_instance()]
+        with mock.patch.object(cli, "parse_env_file", return_value={}), mock.patch.object(
+            cli, "existing_scaled_instance_ids", return_value=[1]
+        ), mock.patch.object(cli, "scaled_instance", return_value=self.build_instance()), mock.patch.object(
+            cli, "ensure_scaled_instance_state", side_effect=fake_instances
+        ), mock.patch.object(cli, "container_running", return_value=True), mock.patch.object(
+            cli, "build_kube_play_command", return_value=["podman", "kube", "play"]
+        ), mock.patch.object(cli, "run_process", return_value=0) as run_process_mock:
+            refreshed = cli.refresh_scaled_instances_after_mattermost_seed(Path("D:/tmp/.env"))
+
+        self.assertEqual(len(refreshed), 1)
+        run_process_mock.assert_called_once()
 
     def test_mattermost_persona_usernames_use_romanized_handles(self) -> None:
         self.assertEqual(cli.mattermost_persona_username(1), "iori")

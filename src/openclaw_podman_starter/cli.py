@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from textwrap import dedent
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 
@@ -92,6 +93,11 @@ RATE_LIMIT_RETRY_TOKENS = (
     "temporarily overloaded",
     "service may be temporarily overloaded",
     '"code":429',
+)
+MATTERMOST_SMOKE_ERROR_TOKENS = (
+    "llm request failed",
+    "network connection error",
+    "fetch failed",
 )
 DEFAULT_HEARTBEAT_PROMPT = (
     "Read HEARTBEAT.md if it exists (workspace context) and follow it as your operating prompt. "
@@ -1963,11 +1969,99 @@ def model_api_key_check(cfg: Config) -> tuple[str | None, str]:
     return None, f"configure auth for provider '{provider}' if needed"
 
 
+def url_with_replaced_host(url: str, host: str) -> str:
+    parsed = urllib_parse.urlsplit(url.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return url.strip()
+    port = f":{parsed.port}" if parsed.port else ""
+    return urllib_parse.urlunsplit((parsed.scheme, f"{host}{port}", parsed.path, parsed.query, parsed.fragment)).rstrip("/")
+
+
+def podman_machine_gateway_ip() -> str:
+    if os.name != "nt" or not podman_available():
+        return ""
+    try:
+        completed = subprocess.run(
+            [podman_bin(), "machine", "ssh", "ip", "route"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    for raw_line in completed.stdout.splitlines():
+        line = raw_line.strip()
+        match = re.match(r"default via (\d{1,3}(?:\.\d{1,3}){3})\b", line)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def http_endpoint_reachable(url: str, timeout_seconds: int = 5) -> bool:
+    try:
+        with urllib_request.urlopen(url, timeout=timeout_seconds) as response:
+            return 200 <= int(response.status) < 400
+    except (urllib_error.URLError, OSError, ConnectionError, ValueError):
+        return False
+
+
+def ollama_tags_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/api/tags"
+
+
+def configured_ollama_base_url(raw_env: dict[str, str]) -> str:
+    return raw_env.get("OPENCLAW_OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).strip() or DEFAULT_OLLAMA_BASE_URL
+
+
+def effective_ollama_base_url(configured_url: str) -> str:
+    normalized = configured_url.strip() or DEFAULT_OLLAMA_BASE_URL
+    parsed = urllib_parse.urlsplit(normalized)
+    if (parsed.hostname or "").lower() != "host.containers.internal":
+        return normalized
+    gateway_ip = podman_machine_gateway_ip()
+    if not gateway_ip:
+        return normalized
+    detected_url = url_with_replaced_host(normalized, gateway_ip)
+    if not http_endpoint_reachable(ollama_tags_url(detected_url)):
+        return normalized
+    return detected_url
+
+
+def raw_env_ollama_runtime_required(raw_env: dict[str, str]) -> bool:
+    model_refs = [resolved_model_ref(raw_env)]
+    autonomy_model = raw_env.get("OPENCLAW_MATTERMOST_AUTONOMY_MODEL", "").strip()
+    if autonomy_model:
+        model_refs.append(autonomy_model)
+    for key, value in raw_env.items():
+        if not value:
+            continue
+        if key.startswith("OPENCLAW_MODEL_REF_INSTANCE_") or key.startswith("OPENCLAW_MATTERMOST_AUTONOMY_MODEL_INSTANCE_"):
+            model_refs.append(value.strip())
+    for model_ref in model_refs:
+        try:
+            provider, _ = split_model_ref(model_ref)
+        except SystemExit:
+            continue
+        if provider == "ollama":
+            return True
+    return False
+
+
+def ollama_runtime_required(cfg: Config) -> bool:
+    return raw_env_ollama_runtime_required(cfg.raw_env)
+
+
 def load_config_from_values(env_file: Path, raw_env: dict[str, str]) -> Config:
     base_dir = env_file.parent
     config_dir_hint = expand_path((raw_env.get("OPENCLAW_CONFIG_DIR") or DEFAULTS["OPENCLAW_CONFIG_DIR"]), base_dir)
     state_env = parse_env_file(config_env_file(config_dir_hint))
     merged = {**DEFAULTS, **state_env, **raw_env}
+    if raw_env_ollama_runtime_required(merged):
+        merged["OPENCLAW_OLLAMA_BASE_URL"] = effective_ollama_base_url(configured_ollama_base_url(merged))
     container_name = (
         merged.get("OPENCLAW_PODMAN_CONTAINER")
         or merged.get("OPENCLAW_CONTAINER")
@@ -2140,10 +2234,6 @@ def ensure_openclaw_config(cfg: Config) -> None:
         model.pop("fallbacks", None)
     sandbox = ensure_object(defaults, "sandbox")
     sandbox["mode"] = "off"
-    default_heartbeat = ensure_object(defaults, "heartbeat")
-    default_heartbeat["every"] = "0m"
-    default_heartbeat["target"] = "none"
-    default_heartbeat["prompt"] = DEFAULT_HEARTBEAT_PROMPT
 
     agent_entries = ensure_list(agents, "list")
     main_agent = ensure_agent_entry(agent_entries, "main")
@@ -2252,6 +2342,10 @@ def ensure_openclaw_config(cfg: Config) -> None:
     mattermost_base_url = cfg.raw_env.get("OPENCLAW_MATTERMOST_BASE_URL", "").strip()
     mattermost_enabled = truthy_env(cfg.raw_env.get("OPENCLAW_MATTERMOST_ENABLED")) or bool(mattermost_token)
     if mattermost_autonomy_enabled(cfg, mattermost_enabled):
+        default_heartbeat = ensure_object(defaults, "heartbeat")
+        default_heartbeat["every"] = "0m"
+        default_heartbeat["target"] = "none"
+        default_heartbeat["prompt"] = DEFAULT_HEARTBEAT_PROMPT
         heartbeat_config = mattermost_autonomy_heartbeat(cfg)
         main_agent["heartbeat"] = heartbeat_config
         for key in ("model", "lightContext", "isolatedSession"):
@@ -2259,8 +2353,7 @@ def ensure_openclaw_config(cfg: Config) -> None:
                 default_heartbeat[key] = heartbeat_config[key]
     elif isinstance(main_agent, dict):
         main_agent.pop("heartbeat", None)
-        for key in ("model", "lightContext", "isolatedSession"):
-            default_heartbeat.pop(key, None)
+        defaults.pop("heartbeat", None)
     for entry in agent_entries:
         if isinstance(entry, dict) and entry.get("id") != "main":
             entry.pop("heartbeat", None)
@@ -2465,6 +2558,20 @@ def selected_instance_ids(instance: int | None, count: int | None) -> list[int]:
 def scale_instance_root(raw_env: dict[str, str], env_file: Path) -> Path:
     root_value = raw_env.get("OPENCLAW_SCALE_INSTANCE_ROOT", DEFAULT_SCALE_INSTANCE_ROOT)
     return expand_path(root_value, env_file.parent)
+
+
+def existing_scaled_instance_ids(raw_env: dict[str, str], env_file: Path) -> list[int]:
+    root = scale_instance_root(raw_env, env_file)
+    if not root.exists():
+        return []
+    instance_ids: list[int] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        match = re.fullmatch(r"agent_(\d{3})", child.name)
+        if match:
+            instance_ids.append(int(match.group(1)))
+    return instance_ids
 
 
 def instance_dir_name(instance_id: int) -> str:
@@ -3364,6 +3471,30 @@ def recent_mattermost_channel_posts(cfg: MattermostConfig, token: str, channel_i
     return result
 
 
+def mattermost_smoke_reply_has_error(message: str) -> bool:
+    normalized = message.lower()
+    return any(token in normalized for token in MATTERMOST_SMOKE_ERROR_TOKENS)
+
+
+def refresh_scaled_instances_after_mattermost_seed(env_file: Path) -> list[ScaledInstance]:
+    raw_env = parse_env_file(env_file)
+    instance_ids = existing_scaled_instance_ids(raw_env, env_file)
+    refreshed: list[ScaledInstance] = []
+    for instance_id in instance_ids:
+        instance = ensure_scaled_instance_state(scaled_instance(env_file, instance_id))
+        refreshed.append(instance)
+        if container_running(instance.container_name):
+            play_command = build_kube_play_command(
+                instance.config,
+                pod_name=instance.pod_name,
+                instance_label=str(instance.instance_id),
+            )
+            exit_code = run_process(play_command, check=False)
+            if exit_code != 0:
+                raise SystemExit(f"Failed to reload instance {instance.instance_id} after Mattermost reseed.")
+    return refreshed
+
+
 def cmd_mattermost_init(args: argparse.Namespace) -> int:
     ensure_env_file(args.env_file)
     cfg = load_mattermost_config(args.env_file)
@@ -3640,6 +3771,9 @@ def cmd_mattermost_seed(args: argparse.Namespace) -> int:
     print_kv("channel", channel_name)
     print_kv("operator", operator_username)
     print_kv("state env", str(mattermost_state_env_file(cfg.root_dir)))
+    refreshed_instances = refresh_scaled_instances_after_mattermost_seed(args.env_file)
+    for instance in refreshed_instances:
+        print(f"[ok] refreshed instance {instance.instance_id} Mattermost token state")
     return 0
 
 
@@ -3673,6 +3807,7 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
 
     bot_ids: dict[str, str] = {}
     mentions: list[str] = []
+    missing_usernames: list[str] = []
     for instance_id in range(1, args.count + 1):
         username = mattermost_persona_username(instance_id)
         mentions.append(f"@{username}")
@@ -3680,25 +3815,37 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
         user_id = str((user_payload or {}).get("id", ""))
         if user_id:
             bot_ids[username] = user_id
+        else:
+            missing_usernames.append(username)
+    if missing_usernames:
+        raise SystemExit(
+            "Mattermost smoke could not resolve bot users for: "
+            + ", ".join(sorted(missing_usernames))
+            + ". Run mattermost seed first."
+        )
 
     marker = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
-    prompt = (
-        f"{' '.join(mentions)} smoke-test {marker}: "
-        "reply in one short sentence with your role and confirm Mattermost is working."
-    )
-    _, _, post_payload = mattermost_api_request(
-        cfg,
-        "/api/v4/posts",
-        method="POST",
-        token=token,
-        payload={"channel_id": channel_id, "message": prompt},
-    )
-    root_post_id = str((post_payload or {}).get("id", ""))
-    if not root_post_id:
-        raise SystemExit("Mattermost smoke post did not return a post id.")
+    root_post_ids: dict[str, str] = {}
+    for username in sorted(bot_ids):
+        prompt = (
+            f"@{username} smoke-test {marker}: "
+            "reply in one short sentence with your role and confirm Mattermost is working."
+        )
+        _, _, post_payload = mattermost_api_request(
+            cfg,
+            "/api/v4/posts",
+            method="POST",
+            token=token,
+            payload={"channel_id": channel_id, "message": prompt},
+        )
+        root_post_id = str((post_payload or {}).get("id", ""))
+        if not root_post_id:
+            raise SystemExit(f"Mattermost smoke post did not return a post id for {username}.")
+        root_post_ids[username] = root_post_id
 
     deadline = time.time() + args.timeout
     seen_usernames: set[str] = set()
+    reply_messages: dict[str, str] = {}
     while time.time() < deadline:
         _, _, posts_payload = mattermost_api_request(
             cfg,
@@ -3709,12 +3856,11 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
         for post in posts.values():
             if not isinstance(post, dict):
                 continue
-            if str(post.get("root_id", "")) != root_post_id:
-                continue
             user_id = str(post.get("user_id", ""))
             for username, bot_id in bot_ids.items():
-                if user_id == bot_id:
+                if user_id == bot_id and str(post.get("root_id", "")) == root_post_ids.get(username, ""):
                     seen_usernames.add(username)
+                    reply_messages[username] = str(post.get("message", "")).strip()
         if len(seen_usernames) == len(bot_ids):
             break
         time.sleep(4)
@@ -3723,9 +3869,18 @@ def cmd_mattermost_smoke(args: argparse.Namespace) -> int:
         missing = sorted(set(bot_ids) - seen_usernames)
         raise SystemExit(f"Mattermost smoke timed out waiting for replies from: {', '.join(missing)}")
 
+    failed_replies = {
+        username: message
+        for username, message in sorted(reply_messages.items())
+        if mattermost_smoke_reply_has_error(message)
+    }
+    if failed_replies:
+        formatted = "; ".join(f"{username}={message}" for username, message in failed_replies.items())
+        raise SystemExit(f"Mattermost smoke received error replies: {formatted}")
+
     print("[ok] Mattermost smoke passed")
     print_kv("channel", f"{team_name}:{channel_name}")
-    print_kv("post", root_post_id)
+    print_kv("posts", ", ".join(f"{username}={post_id}" for username, post_id in sorted(root_post_ids.items())))
     print_kv("replied", ", ".join(sorted(seen_usernames)))
     return 0
 
@@ -3915,6 +4070,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         cfg = load_config(args.env_file)
     else:
         cfg = load_config(args.env_file)
+    scaled_instance_ids = existing_scaled_instance_ids(cfg.raw_env, args.env_file)
 
     checks.append(("uv", command_exists("uv"), "required to run the helper"))
     checks.append(("podman", podman_available(), "required to launch the container"))
@@ -3922,10 +4078,29 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     model_api_key_name, model_api_key_hint = model_api_key_check(cfg)
     if model_api_key_name:
         checks.append((model_api_key_name, bool(cfg.raw_env.get(model_api_key_name, "").strip()), model_api_key_hint))
+    if ollama_runtime_required(cfg):
+        checks.append(("ollama endpoint", http_endpoint_reachable(ollama_tags_url(cfg.ollama_base_url)), ollama_tags_url(cfg.ollama_base_url)))
+        blocking_labels.add("ollama endpoint")
     checks.append((".env", env_exists, str(args.env_file)))
     checks.append(("config dir", cfg.config_dir.exists(), str(cfg.config_dir)))
-    checks.append(("workspace dir", cfg.workspace_dir.exists(), str(cfg.workspace_dir)))
-    checks.append(("gateway token", bool(cfg.gateway_token.strip()), str(config_env_file(cfg.config_dir))))
+    if scaled_instance_ids:
+        checks.append(
+            (
+                "scaled instances",
+                True,
+                f"{len(scaled_instance_ids)} under {scale_instance_root(cfg.raw_env, args.env_file)}",
+            )
+        )
+    workspace_ready = cfg.workspace_dir.exists() or bool(scaled_instance_ids)
+    workspace_detail = str(cfg.workspace_dir)
+    if not cfg.workspace_dir.exists() and scaled_instance_ids:
+        workspace_detail = f"managed per scaled instance under {scale_instance_root(cfg.raw_env, args.env_file)}"
+    checks.append(("workspace dir", workspace_ready, workspace_detail))
+    gateway_token_ready = bool(cfg.gateway_token.strip()) or bool(scaled_instance_ids)
+    gateway_token_detail = str(config_env_file(cfg.config_dir))
+    if not cfg.gateway_token.strip() and scaled_instance_ids:
+        gateway_token_detail = f"managed per scaled instance under {scale_instance_root(cfg.raw_env, args.env_file)}"
+    checks.append(("gateway token", gateway_token_ready, gateway_token_detail))
 
     exit_code = 0
     for label, passed, detail in checks:
@@ -3944,6 +4119,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print_kv("bridge port", str(cfg.bridge_port))
     print_kv("image", cfg.image)
     print_kv("network", cfg.network)
+    configured_ollama_url = configured_ollama_base_url(parse_env_file(args.env_file)) if env_exists else DEFAULT_OLLAMA_BASE_URL
+    if configured_ollama_url != cfg.ollama_base_url:
+        print_kv("ollama base url (configured)", configured_ollama_url)
     print_model_runtime(cfg)
     print_kv("tools profile", "full")
     print_kv("sandbox mode", "off")

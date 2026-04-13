@@ -28,6 +28,8 @@ notepad .env
 Public project name: `onizuka-openclaw-autonomous-team-starter`
 Current helper command: `openclaw-podman`
 
+If you switch the team to Ollama, check the `model base url` that `.\scripts\doctor.ps1` prints before you launch the pods. On Windows + Podman it may auto-resolve the default `host.containers.internal` value to the current Podman-machine gateway.
+
 ## What Gets Created
 
 Per agent:

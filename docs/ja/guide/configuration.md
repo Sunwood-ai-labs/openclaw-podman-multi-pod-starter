@@ -32,7 +32,11 @@
 http://172.27.208.1:11434
 ```
 
-`host.containers.internal` で届かない場合は `.env` の `OPENCLAW_OLLAMA_BASE_URL` を差し替えてください。
+`.env` が既定の `host.containers.internal` を使っている場合、現在は Windows + Podman でその host alias が使えない時に、生成される runtime config が Podman-machine gateway へ自動解決します。`.\scripts\doctor.ps1` も、実際に使われる Ollama `/api/tags` endpoint に届かなければ fail します。
+
+固定したい Ollama endpoint がある場合だけ、`.env` の `OPENCLAW_OLLAMA_BASE_URL` を明示的に差し替えてください。
+
+`.env.example` の `OPENCLAW_MATTERMOST_AUTONOMY_MODEL` は意図的に空欄です。`mattermost lounge enable` 実行時は、明示 override が無ければ現在の primary model をそのまま継承します。
 
 ## 信頼境界
 

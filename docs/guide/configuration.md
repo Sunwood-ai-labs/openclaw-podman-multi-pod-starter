@@ -32,7 +32,11 @@ The working Ollama endpoint observed during validation was:
 http://172.27.208.1:11434
 ```
 
-If `host.containers.internal` does not reach the Windows-hosted Ollama instance in your environment, replace `OPENCLAW_OLLAMA_BASE_URL` accordingly.
+When `.env` still uses the default `host.containers.internal` value, generated runtime config now auto-resolves it to the current Podman-machine gateway on Windows when that host alias is not usable. `.\scripts\doctor.ps1` also fails fast if the effective Ollama `/api/tags` endpoint is unreachable.
+
+If you want to pin a different Ollama endpoint yourself, replace `OPENCLAW_OLLAMA_BASE_URL` accordingly.
+
+`OPENCLAW_MATTERMOST_AUTONOMY_MODEL` is intentionally blank in `.env.example`, so `mattermost lounge enable` inherits the current primary model unless you set an explicit override.
 
 ## Trust Model
 

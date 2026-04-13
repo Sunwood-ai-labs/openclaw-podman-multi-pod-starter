@@ -13,6 +13,7 @@ from urllib import request as urllib_request
 
 CONFIG_DIR = Path("/home/node/.openclaw")
 CONTROL_ENV_PATH = CONFIG_DIR / "control.env"
+STATE_ENV_PATH = CONFIG_DIR / ".env"
 OPENCLAW_CONFIG_PATH = CONFIG_DIR / "openclaw.json"
 DEFAULT_OLLAMA_BASE_URL = "http://host.containers.internal:11434"
 DEFAULT_OLLAMA_MODEL = "gemma4:e2b"
@@ -99,8 +100,16 @@ def planner_runtime_from_env(env: dict[str, str]) -> dict[str, str]:
     }
 
 
+def load_runtime_env() -> dict[str, str]:
+    return {
+        **os.environ,
+        **parse_env_file(STATE_ENV_PATH),
+        **parse_env_file(CONTROL_ENV_PATH),
+    }
+
+
 def load_control_values() -> dict[str, str]:
-    env = parse_env_file(CONTROL_ENV_PATH)
+    env = load_runtime_env()
     runtime = planner_runtime_from_env(env)
     return {
         "team_name": env.get("OPENCLAW_MATTERMOST_TEAM_NAME", "openclaw").strip() or "openclaw",
@@ -130,9 +139,9 @@ def load_mattermost_runtime() -> tuple[str, str]:
     mattermost = channels.get("mattermost")
     if not isinstance(mattermost, dict):
         raise RuntimeError("OpenClaw config is missing channels.mattermost")
-    control_env = {**os.environ, **parse_env_file(CONTROL_ENV_PATH)}
-    base_url = resolve_env_placeholders(str(mattermost.get("baseUrl", "")), control_env).strip()
-    bot_token = resolve_env_placeholders(str(mattermost.get("botToken", "")), control_env).strip()
+    runtime_env = load_runtime_env()
+    base_url = resolve_env_placeholders(str(mattermost.get("baseUrl", "")), runtime_env).strip()
+    bot_token = resolve_env_placeholders(str(mattermost.get("botToken", "")), runtime_env).strip()
     if not base_url or not bot_token:
         raise RuntimeError("Mattermost baseUrl/botToken is missing from openclaw.json")
     return base_url, bot_token
@@ -258,7 +267,12 @@ def fetch_channel_posts(base_url: str, token: str, channel_id: str, per_page: in
 def resolve_bot_ids(base_url: str, token: str) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for handle in HANDLES.values():
-        _, _, payload = mattermost_request(base_url, token, f"/api/v4/users/username/{handle}")
+        try:
+            _, _, payload = mattermost_request(base_url, token, f"/api/v4/users/username/{handle}")
+        except RuntimeError as exc:
+            if "HTTP 404" in str(exc):
+                continue
+            raise
         if isinstance(payload, dict):
             resolved[handle] = str(payload.get("id", "")).strip()
     return resolved
